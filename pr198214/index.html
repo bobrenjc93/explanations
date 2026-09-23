@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pytorch#198214: what "the continuation reaches no tensor" means</title>
+<style>
+  :root { --fg:#1f2328; --muted:#59636e; --bg:#ffffff; --code:#f6f8fa; --border:#d1d9e0;
+          --blue:#0969da; --green:#1a7f37; --red:#cf222e; --amber:#9a6700; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e6edf3; --muted:#9198a1; --bg:#0d1117; --code:#161b22; --border:#3d444d;
+            --blue:#4493f8; --green:#3fb950; --red:#f85149; --amber:#d29922; }
+  }
+  body { font: 16px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg);
+         background: var(--bg); max-width: 820px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 1.7em; line-height: 1.25; margin-bottom: .2em; }
+  h2 { margin-top: 2.2em; padding-bottom: .25em; border-bottom: 1px solid var(--border); }
+  .sub { color: var(--muted); margin-top: 0; }
+  code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code);
+         padding: .1em .35em; border-radius: 4px; }
+  pre { background: var(--code); border: 1px solid var(--border); border-radius: 6px;
+        padding: 12px 14px; overflow-x: auto; line-height: 1.45; }
+  pre code { background: none; padding: 0; }
+  .tldr { border-left: 4px solid var(--blue); background: var(--code); padding: 10px 16px; border-radius: 0 6px 6px 0; }
+  .note { border-left: 4px solid var(--amber); background: var(--code); padding: 10px 16px; border-radius: 0 6px 6px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .95em; }
+  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--code); }
+  .yes { color: var(--green); font-weight: 600; }
+  .no  { color: var(--red); font-weight: 600; }
+  .dead { opacity: .45; }
+  .hl { color: var(--green); font-weight: 600; }
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; margin: 1.2em 0; }
+  .box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; background: var(--code); }
+  .box h4 { margin: 0 0 .3em; font-size: .95em; }
+  .arrow { font-size: 1.6em; color: var(--muted); text-align: center; }
+  @media (max-width: 640px) { .flow { grid-template-columns: 1fr; } .arrow { transform: rotate(90deg); } }
+  footer { margin-top: 3em; color: var(--muted); font-size: .9em; border-top: 1px solid var(--border); padding-top: 1em; }
+</style>
+</head>
+<body>
+
+<h1>pytorch#198214: what "the continuation reaches no tensor" means</h1>
+<p class="sub"><a href="https://github.com/pytorch/pytorch/pull/198214">[precompile] Serve the continuations Dynamo never traced as plain Python</a>.
+All outputs below are real, from running the stack's top commit (Python 3.12, CPU).</p>
+
+<div class="tldr">
+<p><strong>TL;DR.</strong> "Reaches no tensor" is shorthand for one specific check. Before Dynamo
+traces a frame, <code>convert_frame</code> calls <code>has_tensor_in_frame(frame)</code>. If that returns
+<code>False</code>, Dynamo does not trace the frame at all and CPython runs it as ordinary bytecode. In a training step
+that ends with <code>.backward()</code>, the leftover bit of the function after the graph break
+is just "pop <code>None</code> and return". Nothing in that frame is a tensor or a module, so Dynamo skips it.
+The precompile artifact used to treat that skipped frame as a coverage gap and <em>raise</em> on it.
+#198214 runs it as the plain Python it always was.</p>
+</div>
+
+<h2>1. A graph break splits the function in two</h2>
+
+<p>The function being captured:</p>
+<pre><code>SCALE = 2.0
+
+def step(model, x):
+    (model(x) * SCALE).sum().backward()</code></pre>
+
+<p>Dynamo can't put <code>.backward()</code> inside a graph, so it <em>graph-breaks</em> there. It splits
+<code>step</code> into two frames:</p>
+
+<div class="flow">
+  <div class="box">
+    <h4>Entry frame: <code>step</code></h4>
+    Traced by Dynamo. The graph is <code>model(x) * SCALE</code> then <code>.sum()</code>.
+    Then it calls <code>.backward()</code> in eager and jumps to the continuation, passing along
+    whatever values the rest of the function still needs.
+  </div>
+  <div class="arrow">&rarr;</div>
+  <div class="box">
+    <h4>Continuation: <code>torch_dynamo_resume_in_step_at_9</code></h4>
+    A new function Dynamo generates holding "the rest of <code>step</code> after the break".
+    Here "the rest" is only <em>discard backward()'s return value and return None</em>.
+  </div>
+</div>
+
+<p>Every continuation is its own Python frame, and Dynamo decides whether to compile it the same way it decides
+for any other frame. That decision is where "reaches no tensor" comes in.</p>
+
+<h2>2. What the continuation actually receives</h2>
+
+<p>Dynamo passes a continuation only the values that are still <strong>live</strong>, meaning used later in the function,
+plus whatever was on the Python value stack at the break. After <code>.backward()</code>, <code>step</code> never touches
+<code>model</code> or <code>x</code> again, so they are <strong>not passed</strong>. I hooked
+<code>has_tensor_in_frame</code> and printed each frame's locals as Dynamo saw them:</p>
+
+<pre><code>== step
+  has_tensor_in_frame(step) -&gt; <span class="yes">True</span>;  f_locals={'model': 'Linear', 'x': 'Tensor'}
+  has_tensor_in_frame(torch_dynamo_resume_in_step_at_9) -&gt; <span class="no">False</span>;
+      f_locals={'__nested_resume_fns': 'list', '__nested_frame_values': 'list', '___stack0': 'NoneType'}</code></pre>
+
+<p>The continuation's only locals are two bookkeeping lists (empty here) and <code>___stack0</code>, the value
+<code>.backward()</code> returned, which is <code>None</code>. There is no tensor and no module among them.</p>
+
+<h2>3. The check itself: <code>has_tensor_in_frame</code></h2>
+
+<p><code>torch/_dynamo/convert_frame.py:405</code>. A frame counts as worth compiling if <em>any</em> of these hold:</p>
+
+<table>
+<tr><th>Rule</th><th>What it looks at</th><th>Continuation in <code>step</code></th></tr>
+<tr><td>a</td><td>The code object was decorated directly with <code>torch._dynamo.optimize</code></td><td class="no">no</td></tr>
+<tr><td>b</td><td>Some name in <code>co_names</code> resolves, in the frame's globals, to the <code>torch</code> module (or a <code>torch.*</code> submodule, or numpy)</td>
+    <td class="no">no</td></tr>
+<tr><td>c</td><td>Some local is a <code>Tensor</code> or <code>nn.Module</code>, looking recursively inside lists, tuples, dicts and namedtuples</td>
+    <td class="no">no</td></tr>
+</table>
+
+<p>Rule b needs a caveat. The continuation's <code>co_names</code> are <code>('SCALE', 'sum', 'backward')</code>, but
+<code>SCALE</code> is a float and <code>sum</code>/<code>backward</code> are attribute names, not globals, so none of them is the
+<code>torch</code> module. All three rules fail, so <code>convert_frame</code> returns before tracing. Because the frame was never
+traced, it was never given a <strong>compile id</strong> and has <strong>no guarded code</strong>: nothing was compiled, so there is nothing to guard.
+CPython just runs the bytecode.</p>
+
+<p>So "reaches no tensor" really means <em>"has_tensor_in_frame said no"</em>: no tensor or module among the frame's locals, and no reference to the <code>torch</code> module.</p>
+
+<h2>4. The continuation's bytecode</h2>
+
+<p>This is the generated continuation, disassembled. Dynamo copies the whole original body into it and adds a
+prologue that jumps past the part that already ran:</p>
+
+<pre><code>RESUME
+LOAD_CONST True
+STORE_FAST __is_tracing_resume_prologue
+LOAD_FAST ___stack0                 <span class="hl"># push backward()'s return value (None)</span>
+LOAD_CONST False
+STORE_FAST __is_tracing_resume_prologue
+JUMP_FORWARD to 108                 <span class="hl"># skip everything that already ran...</span>
+<span class="dead">RESUME
+PUSH_NULL
+LOAD_FAST model
+LOAD_FAST x
+CALL
+LOAD_GLOBAL SCALE
+BINARY_OP *
+LOAD_ATTR sum
+PUSH_NULL
+SWAP
+CALL
+LOAD_ATTR backward
+PUSH_NULL
+SWAP
+CALL</span>
+POP_TOP                             <span class="hl"># ...land here: discard the None</span>
+RETURN_CONST None                   <span class="hl"># and return</span></code></pre>
+
+<p>The greyed-out part is unreachable. What actually runs is "pop the value, return None", so running it
+uncompiled is obviously correct.</p>
+
+<h2>5. The contrast: a continuation that <em>does</em> reach a tensor</h2>
+
+<p>Make the tail use the model, and the continuation gets compiled like any other frame:</p>
+
+<pre><code>def step_live(model, x):
+    (model(x) * SCALE).sum().backward()
+    return model.weight.grad.norm()</code></pre>
+
+<pre><code>== step_live
+  has_tensor_in_frame(torch_dynamo_resume_in_step_live_at_12) -&gt; <span class="yes">True</span>;
+      f_locals={..., '___stack0': 'NoneType', 'model': 'Linear'}
+  record torch_dynamo_resume_in_step_live_at_12: has_compile_id=True variants=1</code></pre>
+
+<p>Now <code>model</code> is still live after the break, so it is passed to the continuation. Rule c matches, and Dynamo
+traces the frame and records one guarded variant. #198214 doesn't affect this case.</p>
+
+<h2>6. Why this mattered for precompile</h2>
+
+<p>A Dynamo precompile artifact is <em>standalone</em>: the generated <code>python_code</code> rebuilds every captured frame
+from its record and dispatches each call by checking guards. The package keeps a record for the skipped continuation anyway,
+because the entry frame's rewritten bytecode does <code>LOAD_GLOBAL torch_dynamo_resume_in_step_at_9</code>, and that name
+has to be bound to <em>something</em>. The record is:</p>
+
+<pre><code>record step:                              has_compile_id=True   variants=1
+record torch_dynamo_resume_in_step_at_9:  has_compile_id=False  variants=0</code></pre>
+
+<table>
+<tr><th></th><th>Before #198214</th><th>After #198214</th></tr>
+<tr><td>Frame record</td><td>0 variants, indistinguishable from a real gap</td>
+    <td>also carries <code>trivial = not has_compile_id and not bypassed</code></td></tr>
+<tr><td>What the driver binds under the resume name</td>
+    <td>a <code>refuse()</code> stub that raises <code>PrecompileError: ... produced no guarded code</code></td>
+    <td><code>types.FunctionType(code, module_globals)</code>: the continuation as a plain function
+        (a factory over the closure tuple if it has free variables)</td></tr>
+<tr><td>Serving the training step</td>
+    <td class="no">forward runs, backward runs, then the tail <em>raises</em></td>
+    <td class="yes">returns None, grads match eager</td></tr>
+</table>
+
+<p>End to end through the public API, loading in a fresh process with the grads compared against eager:</p>
+
+<pre><code>step: FRAMES=[('step', 1), ('torch_dynamo_resume_in_step_at_6', 0)] returned=None grads_match=True</code></pre>
+
+<h3>Why running it uncompiled is safe</h3>
+
+<p>A frame is marked <code>trivial</code> only if Dynamo skipped it on <em>every</em> capture call. If any call had put a tensor into
+that continuation, Dynamo would have compiled it, the frame would have a compile id, and it would not be trivial.
+So at serve time it does exactly what it did during capture, which is exactly what eager does.
+Two cases are deliberately unchanged: a continuation Dynamo <em>did</em> compile but kept no variant of (a real gap,
+still refused when a call reaches it), and an entry frame with nothing compiled (still refused).</p>
+
+<h2>7. Caveat: "no tensor" is looser than it sounds</h2>
+
+<div class="note">
+<p>Rule b means that just <em>naming the <code>torch</code> global</em> is enough to get a frame compiled, even with no tensor in sight.
+Write the same step with <code>torch.sum</code>:</p>
+<pre><code>def step_torch_global(model, x):
+    torch.sum(model(x) * SCALE).backward()</code></pre>
+<p>The continuation's copied body contains <code>LOAD_GLOBAL torch</code>, so <code>has_tensor_in_frame</code> returns True even though the code
+that actually runs after the jump is still just "pop and return". Dynamo traces it and gets an <em>empty graph</em>.
+Under a precompile capture, <code>allow_empty_graphs</code> keeps that empty graph as a real guarded variant, so this continuation is
+<strong>not</strong> trivial. It is served through the ordinary guarded path, and #198214 isn't involved:</p>
+<pre><code>step_torch_global: FRAMES=[('step_torch_global', 1), ('torch_dynamo_resume_in_step_torch_global_at_9', 1)]
+                   returned=None grads_match=True</code></pre>
+<p>Both spellings serve correctly. They just take different paths: the method spelling (<code>.sum()</code>) gives a trivial continuation
+served as plain Python, and the <code>torch.sum</code> spelling gives an empty compiled variant.</p>
+</div>
+
+<h2>Where the change lives</h2>
+<ul>
+<li><code>torch/_precompile.py</code>, <code>_multigraph_frames</code>: adds the <code>"trivial"</code> field to each frame record.</li>
+<li><code>torch/_precompile_driver.py</code>, <code>_build_multigraph_forward</code>: for a trivial non-entry frame, rebuilds a plain function instead of <code>refuse</code>.</li>
+<li><code>torch/_precompile.py</code>, <code>_serving_mode</code>: counts a trivial frame as covered. Nothing in the library calls this function in this
+    stack (there is no installed serving mode here); only tests do.</li>
+<li><code>test/test_precompile.py</code>, <code>test_trivial_continuation_is_served_as_plain_python</code>.</li>
+</ul>
+
+<footer>Written with an AI assistant (Claude) from probes run against the stack's top commit
+(<code>a45439b135d</code>, ghstack top <a href="https://github.com/pytorch/pytorch/pull/198217">#198217</a>).</footer>
+</body>
+</html>
