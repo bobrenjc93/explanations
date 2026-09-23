@@ -83,6 +83,55 @@ def step(model, x):
 <p>Every continuation is its own Python frame, and Dynamo decides whether to compile it the same way it decides
 for any other frame. That decision is where "reaches no tensor" comes in.</p>
 
+<h2>1b. "But backward is an autograd.Function that gets compiled eagerly or lazily?"</h2>
+
+<p>Yes, and that doesn't conflict with the graph break. There are two different things here that are both called "backward":</p>
+
+<table>
+<tr><th></th><th>The backward <em>graph</em></th><th>The <code>.backward()</code> <em>call</em></th></tr>
+<tr><td>What it is</td><td>The compiled gradient computation AOTAutograd derives from the forward graph</td>
+    <td>A line of user Python that asks the autograd engine to run whatever backward graphs hang off <code>loss</code></td></tr>
+<tr><td>Who produces it</td><td>AOTAutograd, while compiling the <strong>entry frame's</strong> forward graph. It traces the joint graph with
+    placeholder <code>tangents_*</code> inputs, partitions it, and wraps both halves in a <code>CompiledFunction</code> (an <code>autograd.Function</code>)</td>
+    <td>Nobody. Dynamo doesn't trace into the autograd engine (with compiled autograd off, the default), so it graph-breaks here and the call runs in eager</td></tr>
+<tr><td>Lazy vs eager</td><td>Lazy (the default): the backward graph is lowered the first time the engine calls <code>CompiledFunctionBackward</code>.
+    Eager (<code>force_non_lazy_backward_lowering</code>): it is lowered together with the forward</td><td>Doesn't apply. It is an eager call either way</td></tr>
+</table>
+
+<p>Here is the output from hooking AOTAutograd's forward and backward compilers and <code>Tensor.backward</code>, compiling <code>step</code> once in each mode:</p>
+
+<pre><code>Graph Break Reason: Unsupported Tensor.backward() call
+  Explanation: Dynamo currently does not support tracing `Tensor.backward()` when trace_autograd_ops is off.
+
+== force_non_lazy_backward_lowering=False      <span class="hl"># lazy (default)</span>
+  call 1:
+    fw_compiler: forward graph compiled (3 inputs)
+    [eager] Tensor.backward() called on a loss whose grad_fn is CompiledFunctionBackward
+    bw_compiler: backward graph compiled, inputs=['primals_3', 'tangents_1']   <span class="hl"># lowered on first use</span>
+  call 2:
+    [eager] Tensor.backward() called on a loss whose grad_fn is CompiledFunctionBackward
+== force_non_lazy_backward_lowering=True       <span class="hl"># eager lowering</span>
+  call 1:
+    fw_compiler: forward graph compiled (3 inputs)
+    bw_compiler: backward graph compiled, inputs=['primals_3', 'tangents_1']   <span class="hl"># lowered with the forward</span>
+    [eager] Tensor.backward() called on a loss whose grad_fn is CompiledFunctionBackward
+  call 2:
+    [eager] Tensor.backward() called on a loss whose grad_fn is CompiledFunctionBackward</code></pre>
+
+<p>So a served call does this:</p>
+<ol>
+<li>The <strong>entry frame</strong> runs its compiled forward graph. The <code>loss</code> it returns has <code>grad_fn = CompiledFunctionBackward</code>.</li>
+<li>The entry frame's rewritten bytecode calls <code>loss.backward()</code> <em>in eager</em>. That is the graph break.
+    The autograd engine walks to <code>CompiledFunctionBackward</code>, which runs the <strong>compiled backward graph</strong>
+    (<code>tangents_1</code> = ones for a scalar loss). That graph belongs to the entry frame's variant and is shipped inside it.</li>
+<li>Then the entry frame jumps to the <strong>continuation</strong> with <code>.backward()</code>'s return value (<code>None</code>).</li>
+</ol>
+
+<p>All the compiled gradient work happens in steps 1 and 2 and belongs to the entry frame. The continuation in step 3 is only what's
+<em>textually after</em> the <code>.backward()</code> line in <code>step</code>, and here that is nothing. That's why it has no tensor.
+It's also why precompile's <code>_capture_config</code> forces eager backward lowering: a capture that never calls
+<code>.backward()</code> would otherwise never lower the backward graph, and the artifact would have no backward to ship.</p>
+
 <h2>2. What the continuation actually receives</h2>
 
 <p>Dynamo passes a continuation only the values that are still <strong>live</strong>, meaning used later in the function,
