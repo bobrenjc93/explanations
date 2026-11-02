@@ -10,3 +10,4 @@ Published at https://bobrenjc93.github.io/explanations/
 
 - [pytorch#198214: what "the continuation reaches no tensor" means](https://bobrenjc93.github.io/explanations/pr198214/)
 - [Should matmul's backward honor `grad_dtype`? (bf16 inputs, fp32 grads)](https://bobrenjc93.github.io/explanations/matmul-grad-dtype/)
+- [Ten days of H200 kernel optimization for the Muse Spark Open Kernel Challenge](https://bobrenjc93.github.io/explanations/okc-kernels/)
