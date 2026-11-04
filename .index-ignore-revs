@@ -1,0 +1,3 @@
+# Commits that only touch site-wide chrome (favicon, index styling). tools/build_index.py ignores them when computing a
+# page's "Updated" date, so a cosmetic change to every page doesn't mark every page as updated.
+0b26bd8e0c1e99dbbcce91bd880eb02b47458ae9 Add a favicon (SVG + ICO fallback + apple-touch-icon) and link it from every page
