@@ -18,6 +18,7 @@ NAMES = {
     "cot": "written scratchpad (supervised)", "noneL6": "no thinking, 6 layers (+50% params)",
     "cot_ut2": "written scratchpad + looped middle block x2", "cot_cont8": "written scratchpad + 8 continuous thoughts",
     "nocurr_none": "no thinking, no curriculum", "nocurr_cont8": "8 continuous thoughts, no curriculum",
+    "nocurr_ut2": "looped transformer, no curriculum", "nocurr_cot": "written scratchpad, no curriculum",
     "coco_none": "scratchpad, then removed", "coco_um8": 'scratchpad distilled into 8 "um" tokens',
     "coco_cont8": "scratchpad distilled into 8 continuous thoughts",
     "krand_cont": "continuous thoughts, K varied in training", "krand_um": '"um" tokens, K varied in training',

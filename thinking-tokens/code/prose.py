@@ -79,11 +79,13 @@ def tldr():
     if pd.has("nocurr_none"):
         b.append(f"<li><strong>The curriculum did not help.</strong> Arithmetic first, TI-84 last: {E('none')}. All seven levels mixed from step 0, "
                  f"same budget: {E('nocurr_none')}.</li>")
-    if pd.has("big_cot"):
-        r = pd.R["big_cot_s0"]["final"]
-        b.append(f"<li><strong>The calculator.</strong> Scratchpad recipe at 10.7M parameters: {pct(float(np.mean(r['em_gen'])))} exact and "
-                 f"{pct(float(np.mean(r['close'])))} within 1% on held-out problems; near-perfect on add/subtract, {pct(r['em_gen'][3],0)} on "
-                 f"multi-operation expressions, {pct(r['em_gen'][5],0)} on scientific functions.</li>")
+    big = "big2" if pd.has("big2") else "big_cot" if pd.has("big_cot") else None
+    if big:
+        r = pd.R[f"{big}_s0"]["final"]
+        recipe = "Scratchpad, looped middle block and no curriculum" if big == "big2" else "Scratchpad recipe"
+        b.append(f"<li><strong>The calculator.</strong> {recipe} at 10.7M parameters: <strong>{pct(float(np.mean(r['em_gen'])))}</strong> exact and "
+                 f"{pct(float(np.mean(r['close'])))} within 1% on held-out problems; {pct(r['em_gen'][1],0)} on long add/subtract, {pct(r['em_gen'][3],0)} on "
+                 f"multi-operation expressions, {pct(r['em_gen'][5],0)} on scientific functions, {pct(r['em_gen'][6],0)} on composite ones.</li>")
     return '<div class="tldr"><p><strong>TL;DR.</strong></p><ul>' + "".join(b) + "</ul></div>"
 
 
@@ -109,7 +111,7 @@ def results():
             f", above every curriculum seed ({SL('none')}). The staged schedule spends its early steps on problems the model masters within a few "
             "hundred updates and shows it the hard levels late: composite problems only exist for the last 31% of training. The staircase makes "
             "a nice picture; as a recipe at a fixed budget it loses to plain mixing. Every comparison below was run under the curriculum, so the "
-            "variants are comparable with each other, but none of them is the best this network can do.</p>")
+            "variants are comparable with each other, but none of them is the best this network can do (4.9 repeats the main ones without it).</p>")
 
     # ---------------------------------------------------------------- 4.2
     add("<h3>4.2 What should a thought be made of?</h3>")
@@ -124,6 +126,11 @@ def results():
         f". Filler tokens ({C('um8')}) and discrete tokens ({C('disc8')}) stay at the baseline. So the extra steps are doing arithmetic of a kind, "
         "an estimate of magnitude and leading digits, and that estimate only survives the trip to the next step if the channel is continuous. "
         "What they do not deliver is the last digit.</p>")
+    if pd.has("direct8"):
+        add(f"<p>The dedicated head is not what does it. Feeding the final hidden state straight back with no head at all, as Coconut does, "
+            f"scores {E('direct8')} exact and {C('direct8')} within 1%. And the soft mix, which the conversation worried would be boxed in by the "
+            "convex hull of 1,024 embeddings, is as good as the free vector. What matters is that the channel is continuous, not which "
+            "continuous channel.</p>")
     re_ = pd.PROBES.get("relerr", {})
     if all(k in re_ for k in ("none_s0", "none_s1", "none_s2", "cont8_s0", "cont8_s1", "cont8_s2")):
         w = lambda names, t: float(np.mean([np.mean(re_[n][t]) for n in names]))
@@ -173,7 +180,7 @@ def results():
                  f"position, prompt and answer alike. Same parameters as the plain model, {pd.tle('ut2'):.0f} token-layer evaluations (the price of 8 thoughts). "
                  f"It scores <strong>{E('ut2')}</strong> exact" + (f" (seeds {SL('ut2')})" if n > 1 else " (one seed)") +
                  f" and {C('ut2')} within 1%: the best exact match of anything trained without scratchpad labels"
-                 + (f", and looping three times gives {E('ut3')}" if pd.has("ut3") else "") + ".")
+                 + (f". Looping three times instead of two gives {E('ut3')}, no better" if pd.has("ut3") else "") + ".")
     if pd.has("noneL6"):
         t.append(f"<strong>Or just add layers.</strong> Six distinct layers instead of four, no thinking: the same inference cost again, but 50% more "
                  f"parameters. {E('noneL6')} exact, {C('noneL6')} within 1%.")
@@ -209,8 +216,11 @@ def results():
             f"values as text to imitate and it reaches <strong>{E('cot')}</strong> exact ({C('cot')} within 1%). On this test set the scratchpad "
             f"is not even the expensive option: most problems have little or nothing to write, so it averages {pd.tle('cot'):.0f} token-layer "
             f"evaluations against {pd.tle('cont8'):.0f} for eight thoughts. It costs more only where it helps most (composite problems: 146 vs 125).</p>")
-    add(figs.fig_bars("Same network, three training signals", "Exact match, level average. The scratchpad rows use intermediate-value labels the others never see.",
-                      ["none", "cont8", "coco_none", "coco_um8", "coco_cont8", "cot_cont8", "cot"], label_w=330))
+    add(figs.fig_bars("Same network, different training signals", "Exact match, level average. The scratchpad rows use intermediate-value labels the others never see.",
+                      ["none", "cont8", "coco_none", "coco_um8", "coco_cont8", "cot_cont8", "cot", "cot_ut2"], label_w=330))
+    if pd.has("cot_ut2"):
+        add(f"<p>The loop from 4.4 stacks with the scratchpad: both together reach <strong>{E('cot_ut2')}</strong> exact and {C('cot_ut2')} within 1% "
+            f"with the same 3.18M parameters.</p>")
     if pd.has("coco_cont8"):
         add(f"<p>The obvious next move is to get the scratchpad's benefit without paying for its tokens: train with the scratchpad, then remove "
             f"it one item at a time while handing the model continuous thoughts to hold what the removed text used to hold (the idea behind "
@@ -260,25 +270,54 @@ def results():
             f"The second and third characters never show up this way (they stay near {pct(lens['match_char'][1][-1],0)}, about chance): "
             "whatever else the thoughts carry is not written in the output head's alphabet. This fits section 4.2: the thinking steps settle "
             "sign, magnitude and leading digit.</p>")
+
+    # ---------------------------------------------------------------- 4.9
+    pairs = [(a, b) for a, b in [("none", "nocurr_none"), ("cont8", "nocurr_cont8"), ("ut2", "nocurr_ut2"), ("cot", "nocurr_cot")] if pd.has(a) and pd.has(b)]
+    if len(pairs) >= 2:
+        add("<h3>4.9 The same comparisons without the curriculum</h3>")
+        add("<p>Since the curriculum turned out to cost accuracy (4.1), the main variants were rerun with all seven levels mixed from step 0, "
+            "to check that the conclusions are not an artefact of the schedule.</p>")
+        rows = [[figs.NAMES[a], pct(pd.em(a)[0]), pct(pd.close(a)), pct(pd.em(b)[0]), pct(pd.close(b)), len(pd.seeds(b))] for a, b in pairs]
+        add(table(["variant", "curriculum: exact", "within 1%", "mixed from step 0: exact", "within 1%", "seeds"], rows))
+        g = {a: pd.em(b)[0] for a, b in pairs}
+        t = "Every variant gains from dropping the curriculum."
+        if "cont8" in g and "ut2" in g and "none" in g:
+            t += (f" The picture is the same: continuous thoughts are {100*(g['cont8']-g['none']):+.1f} points from no thinking in exact match "
+                  f"({pct(pd.close('nocurr_none'))} &rarr; {pct(pd.close('nocurr_cont8'))} within 1%), the looped block is {100*(g['ut2']-g['none']):+.1f}")
+            t += f", and the scratchpad is {100*(g['cot']-g['none']):+.1f}." if "cot" in g else "."
+        add(f"<p>{t}</p>")
     return "\n".join(x for x in o if x)
 
 
 def flagship():
-    if not pd.has("big_cot"):
+    name = "big2" if pd.has("big2") else "big_cot" if pd.has("big_cot") else None
+    if not name:
         return ""
-    r = pd.R["big_cot_s0"]["final"]
+    run = pd.R[f"{name}_s0"]
+    r = run["final"]
+    params = run["model"]["params"] / 1e6
     o = ["<h2>5. The calculator</h2>"]
-    o.append(f"<p>The recipe that works is the unglamorous one, so the final model uses it: written scratchpad, the same curriculum and 20,000 steps, "
-             f"scaled up to 6 layers and width 384 ({pd.R['big_cot_s0']['model']['params']/1e6:.1f}M parameters). It prints exactly the right display on "
-             f"<strong>{pct(float(np.mean(r['em_gen'])))}</strong> of held-out problems and lands within 1% on <strong>{pct(float(np.mean(r['close'])))}</strong>.</p>")
+    if name == "big2":
+        o.append(f"<p>The final model uses the three things that helped and none of the things that did not: a written scratchpad, the middle "
+                 f"block looped twice at every position, and all seven levels mixed from the first step instead of the curriculum. It is scaled up "
+                 f"to 6 layers and width 384 ({params:.1f}M parameters) and trained for the same 20,000 steps. It prints exactly the right display on "
+                 f"<strong>{pct(float(np.mean(r['em_gen'])))}</strong> of held-out problems and lands within 1% on "
+                 f"<strong>{pct(float(np.mean(r['close'])))}</strong>."
+                 + (f" (A first attempt at this size, with the curriculum and without the loop, got {E('big_cot')} and {C('big_cot')}.)" if pd.has("big_cot") else "")
+                 + "</p>")
+    else:
+        o.append(f"<p>The recipe that works is the unglamorous one, so the final model uses it: written scratchpad, the same curriculum and 20,000 steps, "
+                 f"scaled up to 6 layers and width 384 ({params:.1f}M parameters). It prints exactly the right display on "
+                 f"<strong>{pct(float(np.mean(r['em_gen'])))}</strong> of held-out problems and lands within 1% on <strong>{pct(float(np.mean(r['close'])))}</strong>.</p>")
     rows = [[mg.LEVELS[l], pct(pd.levels('none')[l], 0), pct(float(np.mean([pd.R[n]['final']['close'][l] for n in pd.seeds('none')])), 0),
              pct(r["em_gen"][l], 0), pct(r["close"][l], 0)] for l in range(mg.NLEVELS)]
-    o.append(table(["level", "3M, no thinking: exact", "within 1%", "10.7M, scratchpad: exact", "within 1%"], rows))
+    o.append(table(["level", "3M plain model: exact", "within 1%", f"{params:.1f}M calculator: exact", "within 1%"], rows))
     o.append("<p>A session with it, on test problems it has never seen (four per level, picked at random, not by outcome):</p>")
-    o.append(figs.calculator_table("big_cot_s0"))
-    o.append("<p>So: a reliable four-function calculator with parentheses, a usable one for powers, roots and trig, and an unreliable one for "
-             "anything that needs four correct digits of a transcendental function or a procedure it has no scratchpad for (gcd, nCr, "
-             "e<sup>x</sup>). It was still improving when training stopped.</p>")
+    o.append(figs.calculator_table(f"{name}_s0"))
+    o.append(f"<p>So: exact on sums of any length, {pct(r['em_gen'][3],0)} on parenthesised multi-operation expressions and {pct(r['em_gen'][4],0)} on "
+             f"decimals, powers and roots. On composite scientific expressions it is almost always close ({pct(r['close'][6],0)} within 1%) but "
+             f"has all four digits right only {pct(r['em_gen'][6],0)} of the time, and it stays weak wherever a procedure has no scratchpad to lean on "
+             "(gcd and lcm, nCr, e<sup>x</sup>). It was still improving when training stopped.</p>")
     return "\n".join(o)
 
 
@@ -309,7 +348,7 @@ def takeaways():
     o.append("</ul>")
     o.append("<p><strong>Caveats.</strong> One small model family, 20,000 steps, one task. Many variants have a single seed and the seed spread "
              "is about &plusmn;2 points, so trust the large or replicated effects: the within-1% gain of continuous thoughts (every continuous "
-             "seed beats every baseline seed), the looped-transformer gain (likewise), the scratchpad gain, the knock-out collapses, the "
+             "seed beats every baseline seed), the looped-transformer gain and the no-curriculum gain (likewise, three seeds each), the scratchpad gain, the knock-out collapses, the "
              "fixed-K brittleness and the flat variable-K curve. Discrete tokens were trained with straight-through Gumbel-softmax, one of several "
              "options. Thoughts were only allowed before the first answer character, never between digits. The distillation stages were short. "
              "A 4-layer model has little \"middle\", so the middle-layer-thoughts result may not carry to deep models.</p>")
