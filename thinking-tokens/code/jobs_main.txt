@@ -1,0 +1,33 @@
+# started
+none_s0 --mode none --seed 0
+cont8_s0 --mode cont --K 8 --seed 0
+um8_s0 --mode um --K 8 --seed 0
+disc8_s0 --mode disc --K 8 --seed 0
+soft8_s0 --mode soft --K 8 --seed 0
+none_s1 --mode none --seed 1
+cont8_s1 --mode cont --K 8 --seed 1
+cot_s0 --mode cot
+disc8_s1 --mode disc --K 8 --seed 1
+coco_cont8_s0 --mode cont --K 8 --coco 4
+none_s2 --mode none --seed 2
+cont8_s2 --mode cont --K 8 --seed 2
+disc8_s2 --mode disc --K 8 --seed 2
+coco_cont8_s1 --mode cont --K 8 --coco 4 --seed 1
+cont16_s0 --mode cont --K 16
+win1_s0 --mode cont --K 8 --window 1
+mid16_s0 --mode cont --K 16 --lo 1 --hi 3
+krand_cont_s0 --mode cont --K 16 --krand 1 --kset 0,1,2,4,8,16 --evalK 0,1,2,4,8,16,24,32
+ut2_s0 --mode ut --ut 2 --lo 1 --hi 3
+noneL6_s0 --mode none --L 6
+ut2_s1 --mode ut --ut 2 --lo 1 --hi 3 --seed 1
+ut2_s2 --mode ut --ut 2 --lo 1 --hi 3 --seed 2
+cot_ut2_s0 --mode ut --ut 2 --lo 1 --hi 3 --scratch 1
+nocurr_none_s0 --mode none --curriculum 0
+direct8_s0 --mode direct --K 8 --seed 0
+ut3_s0 --mode ut --ut 3 --lo 1 --hi 3
+# robustness: the main comparisons without the curriculum
+nocurr_none_s1 --mode none --curriculum 0 --seed 1
+nocurr_cot_s0 --mode cot --curriculum 0
+nocurr_ut2_s0 --mode ut --ut 2 --lo 1 --hi 3 --curriculum 0
+nocurr_cont8_s0 --mode cont --K 8 --curriculum 0
+nocurr_none_s2 --mode none --curriculum 0 --seed 2

@@ -25,6 +25,7 @@ TAGS = {
     "pr198214": ["PyTorch", "Dynamo", "precompile"],
     "matmul-grad-dtype": ["PyTorch", "autograd", "dtypes"],
     "okc-kernels": ["CUDA", "H200", "kernels"],
+    "thinking-tokens": ["transformers", "experiment", "latent reasoning"],
 }
 
 
