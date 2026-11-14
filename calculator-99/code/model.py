@@ -304,8 +304,9 @@ class Net(nn.Module):
         return ((pred == A) | (A == PAD)).all(1)
 
     @torch.no_grad()
-    def generate(self, P, max_new, eos=2, conf=False, **kw):
-        """Greedy decoding. conf=True also returns the log-probability of the decoded answer."""
+    def generate(self, P, max_new, eos=2, conf=False, prefix=None, **kw):
+        """Greedy decoding. conf=True also returns the log-probability of what was decoded.
+        prefix: token ids the output is forced to start with (not counted in that log-probability)."""
         final, cache, pvalid = self.think(P, **kw)
         Pm = P.shape[1]
         out = []
@@ -313,8 +314,11 @@ class Net(nn.Module):
         done = torch.zeros(P.shape[0], dtype=torch.bool, device=P.device)
         logp = torch.zeros(P.shape[0], device=P.device)
         for i in range(max_new):
-            tok = logits.argmax(-1)
-            logp += torch.where(done, 0.0, logits.log_softmax(-1).gather(-1, tok[..., None])[:, 0, 0])
+            if prefix is not None and i < len(prefix):
+                tok = torch.full_like(logits.argmax(-1), prefix[i])
+            else:
+                tok = logits.argmax(-1)
+                logp += torch.where(done, 0.0, logits.log_softmax(-1).gather(-1, tok[..., None])[:, 0, 0])
             out.append(tok)
             done |= tok[:, 0] == eos
             if done.all() or i == max_new - 1:

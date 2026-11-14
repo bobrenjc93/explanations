@@ -58,13 +58,25 @@ def tldr():
     b.append("<li><strong>The old scratchpad capped a perfect model at 94.9%</strong>: it wrote intermediate values to 4 significant digits, the precision "
              "of the answer. The new one carries 6 digits and spells out procedures: partial products, long division, Euclid, a Newton step.</li>")
     L = G.LAD
-    if all(n in L for n, _, _ in G.RUNGS):
-        b.append(f"<li><strong>Replayed one change at a time</strong> (3.2M parameters, 10,000 steps): old scratchpad {pct(F.em(L,'L0_v1_s0'))}; 6-digit values "
-                 f"alone {pct(F.em(L,'L1_values6_s0'))}; written procedures {pct(F.em(L,'L2_v20_s0'))}; four smaller fixes {pct(F.em(L,'L6_weighted_s0'))}. "
-                 "Training-loss and held-out accuracy curves for every step are in section 3.</li>")
-    if "T_cont8_s0" in L and "L6_weighted_s0" in L:
-        b.append(f"<li><strong>Thinking tokens add nothing on top of a worked solution.</strong> Eight continuous thoughts in front of it: "
-                 f"{pct(F.em(L,'T_cont8_s0'))}; eight \"um\" tokens: {pct(F.em(L,'T_um8_s0'))}; none: {pct(F.em(L,'L6_weighted_s0'))}.</li>")
+    if all(n in L for n in ("U0_answer_s0", "U4_loop_s0", "L0_v1_s0", "L1_values6_s0", "L2_v20_s0", "L6_weighted_s0")):
+        e_ = lambda n: pct(F.em(L, n))
+        b.append(f"<li><strong>The whole path, one idea at a time</strong> (3.2M parameters, 10,000 steps): answer only {e_('U0_answer_s0')}; looped layers "
+                 f"{e_('U4_loop_s0')}; a thinking block with intermediate values {e_('L0_v1_s0')}; 6-digit values {e_('L1_values6_s0')}; procedures in the block "
+                 f"{e_('L2_v20_s0')}; four targeted fixes {e_('L6_weighted_s0')}; then steps and weights to 99.1%. Loss and held-out accuracy curves for every "
+                 "idea are in section 3.</li>")
+    if all(n in L for n in ("U0_answer_s0", "U2_cont8_s0", "U3_disc8_s0", "T_cont8_s0", "L6_weighted_s0")):
+        b.append(f"<li><strong>Thinking only helps when its content is supervised.</strong> Thinking tokens (filler or continuous) and a thinking block of "
+                 f"free tokens, trained from the answer alone, leave the answer-only model within {max(abs(F.em(L,n)-F.em(L,'U0_answer_s0')) for n in ('U1_um8_s0','U2_cont8_s0','U3_disc8_s0'))*100:.1f} "
+                 f"points of where it was; thinking tokens in front of a full block add {100*(F.em(L,'T_cont8_s0')-F.em(L,'L6_weighted_s0')):+.1f}.</li>")
+    ed = G.effort_data()
+    if ed:
+        c2 = G.effort_match(ed, "cascade2")
+        full = ed["efforts"]["full"]
+        b.append(f"<li><strong>A thinking-effort dial works but barely pays.</strong> One model answers with no, brief or full thinking: "
+                 f"{pct(ed['efforts']['none']['mean'])}, {pct(ed['efforts']['brief']['mean'])}, {pct(full['mean'])}. Thinking fully only when unsure of the "
+                 f"quick answer saves {100*(1-c2['gflop']/full['gflop']):.0f}% of the inference compute at the same accuracy, and the dial model is "
+                 f"{100*(G.F.em(G.LAD, 'L6_weighted_s0')-full['mean']):.1f} points behind one trained only on full blocks: a worked solution is already short "
+                 "when the problem is easy.</li>")
     b.append("<li><strong>Three bugs in the training signal</strong>, each found by reading wrong solutions: a Newton step the model learned to skip, table "
              "entries that existed only in the test set, and a division step that asked for a multiply and a subtract at once.</li>")
     if has("b_base_s0", "b_nope_s0", "b_abs_s0", "b_rms_s0"):
@@ -127,6 +139,10 @@ def scratchpad():
         ["sin, cos off the 0.01 grid; ln off its table", "nearest table entry plus a first-order correction"],
         ["sin, cos, tan, asin, acos, atan on the grid", "one looked-up value"]], num_from=9))
     o.append(F.worked_examples())
+    o.append("<p>In the vocabulary of reasoning models this is a <strong>thinking block</strong>. The model's full output for the first row is "
+             "<code>&lt;think&gt;8-4818=-4810;-4810-96=-4906&lt;/think&gt;-4906</code>: two delimiter tokens (stored in the code as <code>[</code> and "
+             "<code>]</code>), free text between them, then the answer, and only the answer is graded. The old scratchpad was a thinking block too, "
+             "with less in it. Section 6 comes back to what else a thinking block can be.</p>")
     o.append("<p><strong>Checks.</strong> All 23,860 arithmetic steps the generator writes for the test set were re-verified by an independent checker: zero "
              "errors. Because every value is derived only from what is printed, the final answer is the last value rounded to 4 digits, and that agrees "
              "with the true answer on 99.78% of test problems (98.65% on composite ones; the rest is 6-digit round-off). One detail mattered: an "
@@ -141,65 +157,124 @@ def scratchpad():
 
 
 def ladder():
-    if sum(n in G.LAD for n, _, _ in G.RUNGS) < 2:
+    L = G.LAD
+    if sum(n in L for n, *_ in G.TIMELINE) < 3:
         return ""
-    o = ["<h2>3. The path, one change at a time</h2>"]
-    o.append("<p>To see what each change bought, the whole path was replayed with one model: 3.2M parameters, the looped middle block, 10,000 steps "
-             "at batch 2,048, a fresh pool of 14M problems per version. Every run logs its training loss every 250 steps and, every 1,000 steps, generates "
-             "full solutions for 1,400 held-out problems and scores the final answers.</p>")
+    em = lambda n: F.em(L, n)
+    g = lambda a, b: 100 * (em(b) - em(a))
+    hasl = lambda *ns: all(n in L for n in ns)
+    o = ["<h2>3. The timeline: every idea, layered</h2>"]
+    o.append("<p>To see how things change as the ideas pile up, the whole path was replayed with one model, from answering directly to the final "
+             "recipe: 3.2M parameters, 10,000 steps at batch 2,048, a pool of 14M problems with all levels mixed. (The very first idea, an easy-to-hard "
+             "curriculum, was already settled in the first write-up: at 20,000 steps it scored 54.1% against 59.2% without it, so nothing here uses "
+             "it.) Each idea is added to the kept ideas before it. Ideas that did not help are shown and then left out. Every run logs its training "
+             "loss every 250 steps and, every 1,000 steps, generates full outputs for 1,400 held-out problems and scores the final answers.</p>")
+    o.append(G.ladder_list())
     extra = []
     if has(SMALL):
-        extra.append(("same, 20,000 steps", F.em(ALL, SMALL), F.close(ALL, SMALL)))
+        extra.append(("15. + 2x the training steps", F.em(ALL, SMALL), F.close(ALL, SMALL)))
     if has(MAIN):
-        extra.append(("10.7M parameters, 30,000 steps", F.em(ALL, MAIN), F.close(ALL, MAIN)))
-    o.append("<p>The versions, each including everything before it:</p>")
-    o.append(G.ladder_list())
+        extra.append(("16. + 3.4x the parameters, 1.5x the steps", F.em(ALL, MAIN), F.close(ALL, MAIN)))
     o.append(G.fig_ladder_bars(extra))
     o.append(G.ladder_table())
-    o.append("<p>How to read the columns. <em>Tokens / problem</em> is the length of what the model must write. <em>Loss / token</em> is the final "
-             "training cross-entropy averaged over those characters; a format with more easy characters gets a lower number without being better, so "
-             "the comparable figure is <em>loss / problem</em> (the two multiplied): how many nats of uncertainty are left over a whole solution. "
-             "<em>Train PFLOP</em> is forward plus backward compute for the run, <em>infer GFLOP</em> the forward compute to solve one problem "
-             "with a KV cache (section 7 has the accounting).</p>")
-    L = G.LAD
-    if all(n in L for n, _, _ in G.RUNGS):
-        g = lambda a, b: 100 * (F.em(L, b) - F.em(L, a))
-        o.append(f"<p><strong>What the ladder says.</strong> Almost all of it is one rung. Carrying 6 digits and restating every operation, without "
-                 f"writing any procedure, is worth {g('L0_v1_s0', 'L1_values6_s0'):+.1f} points: the precision ceiling was real but it was not what the model "
-                 f"was hitting. Writing the procedures out is worth {g('L1_values6_s0', 'L2_v20_s0'):+.1f}. The four later changes add "
-                 f"{g('L2_v20_s0', 'L6_weighted_s0'):+.1f} together, a point or less each, and each one is aimed at a class of problems rather than at "
-                 "the average. Doubling the steps and then tripling the parameters add the last 2.5.</p>")
+    o.append("<p>How to read the columns. <em>Gain</em> is against the run the idea was added to. <em>Tokens / problem</em> is the length of what the "
+             "model must write. <em>Loss / token</em> is the final training cross-entropy averaged over those characters; a format with more easy "
+             "characters gets a lower number without being better, so the comparable figure is <em>loss / problem</em> (the two multiplied): the nats "
+             "of uncertainty left over a whole output. <em>Train PFLOP</em> is forward plus backward compute for the run, <em>infer GFLOP</em> the "
+             "forward compute to solve one problem with a KV cache (section 7 has the accounting).</p>")
+    t = []
+    if hasl("U0_answer_s0", "U1_um8_s0", "U2_cont8_s0", "U3_disc8_s0"):
+        t.append(f"<strong>Thinking that carries no supervised content does little.</strong> On the answer-only model ({pct(em('U0_answer_s0'))}), eight "
+                 f"filler tokens change exact match by {g('U0_answer_s0','U1_um8_s0'):+.1f} points, eight continuous thoughts by {g('U0_answer_s0','U2_cont8_s0'):+.1f}, "
+                 f"and a thinking block of eight free tokens the model chooses itself by {g('U0_answer_s0','U3_disc8_s0'):+.1f}. With only the answer "
+                 "graded, none of them finds a procedure.")
+    if hasl("U0_answer_s0", "U4_loop_s0"):
+        t.append(f"<strong>Depth at every position helps a little.</strong> Looping the middle layers: {g('U0_answer_s0','U4_loop_s0'):+.1f}.")
+    if hasl("U4_loop_s0", "L0_v1_s0", "L1_values6_s0", "L2_v20_s0"):
+        t.append(f"<strong>A supervised thinking block is where it moves.</strong> Writing the intermediate values before the answer: "
+                 f"{g('U4_loop_s0','L0_v1_s0'):+.1f} points. More digits and one restated step per operation: {g('L0_v1_s0','L1_values6_s0'):+.1f}. "
+                 f"Writing the <em>procedures</em> in the block: {g('L1_values6_s0','L2_v20_s0'):+.1f}, the largest single step on the page.")
+    if hasl("L2_v20_s0", "L6_weighted_s0"):
+        t.append(f"<strong>Then four targeted fixes</strong> add {g('L2_v20_s0','L6_weighted_s0'):+.1f} together, a point or less each.")
+    if hasl("L6_weighted_s0", "T_cont8_s0", "T_um8_s0"):
+        t.append(f"<strong>Thinking tokens again, on top of the full block:</strong> {g('L6_weighted_s0','T_cont8_s0'):+.1f} (continuous) and "
+                 f"{g('L6_weighted_s0','T_um8_s0'):+.1f} (filler). Still nothing.")
+    if hasl("L6_weighted_s0", "E_effort_s0"):
+        t.append(f"<strong>The effort dial</strong> costs {abs(g('L6_weighted_s0','E_effort_s0')):.1f} points at full effort for the ability to answer with "
+                 "less thinking, an ability that saves only a few percent of the inference compute (section 6).")
+    t.append("<strong>Scale comes last:</strong> doubling the steps and then tripling the parameters add the final 2.5 points.")
+    o.append("<p><strong>What the timeline says.</strong></p><ul>" + "".join(f"<li>{x}</li>" for x in t) + "</ul>")
     o.append(G.fig_ladder("ans"))
     o.append(G.fig_ladder("loss"))
-    o.append("<p>The loss panels show why loss is the wrong yardstick across versions. Per token it falls sixfold when procedures arrive, because a "
+    o.append("<p>The loss panels show why loss is the wrong yardstick across formats. Per token it falls sixfold when procedures arrive, because a "
              "worked solution is mostly characters that follow mechanically from the ones before. It then <em>rises</em> at the jitter step, where accuracy "
              "improves: a jittered root estimate is random by construction, so part of every such target can never be predicted, and that floor is "
-             "what the curve sits on. It rises again per problem with the weighted pool, which simply contains longer problems. Within one panel the "
-             "useful reading is the shape: every version is still descending at 10,000 steps, which is why the 20,000-step run gains 1.5 points.</p>")
+             "what the curve sits on. It rises again per problem with the weighted pool, which simply contains longer problems. Where the format does not "
+             "change (the thinking-token panels, the loop) the two curves are directly comparable, and they lie on top of each other. Every "
+             "version is still descending at 10,000 steps, which is why the 20,000-step run gains 1.5 points.</p>")
     return "\n".join(o)
 
 
 def thinking():
-    if "T_cont8_s0" not in G.LAD or "L6_weighted_s0" not in G.LAD:
+    L = G.LAD
+    if "T_cont8_s0" not in L or "L6_weighted_s0" not in L:
         return ""
-    base, cont = F.em(G.LAD, "L6_weighted_s0"), F.em(G.LAD, "T_cont8_s0")
-    o = ["<h2>6. Thinking tokens, tested on the new setup</h2>"]
-    o.append("<p>The first write-up was about thinking tokens: positions before the answer that carry no supervised content, either a learned filler "
-             "(\"um\") or a continuous vector fed back from the model's own last hidden state. They did not improve exact match there, and the first "
-             "version of this page dropped them without saying so. Here they are on the final setup: 8 thinking positions between the <code>=</code> "
-             "and the opening bracket of the worked solution, trained end to end from the same loss, everything else identical.</p>")
-    o.append(G.fig_think())
-    x = (f"<p>Eight continuous thoughts: {pct(cont)} against {pct(base)} without them")
-    if "T_um8_s0" in G.LAD:
-        x += f"; eight \"um\" tokens: {pct(F.em(G.LAD, 'T_um8_s0'))}"
-    x += (". One seed each, and in the first write-up a seed was worth about 2 points, so "
-          + ("neither is a detectable change" if abs(cont - base) < 0.02 else "the continuous-thought difference is at the edge of what one seed can show") + ".</p>")
+    em = lambda n: F.em(L, n)
+    o = ["<h2>6. Thinking tokens and thinking blocks</h2>"]
+    o.append("<p>Three different things get called thinking, and the timeline has all three.</p>")
+    x = ("<p><strong>Thinking tokens</strong> are positions before the answer with no supervised content: a learned filler (\"um\") or a continuous "
+         "vector fed back from the model's own last hidden state. The first write-up was about these.")
+    if all(n in L for n in ("U0_answer_s0", "U1_um8_s0", "U2_cont8_s0")):
+        x += (f" Before any block exists they move the answer-only model from {pct(em('U0_answer_s0'))} to {pct(em('U1_um8_s0'))} (filler) and "
+              f"{pct(em('U2_cont8_s0'))} (continuous), with within-1% going from {pct(F.close(L,'U0_answer_s0'))} to {pct(F.close(L,'U2_cont8_s0'))} for the "
+              "continuous ones: the same small estimation effect as before.")
+    x += (f" In front of a full thinking block they do nothing: {pct(em('T_cont8_s0'))} and {pct(em('T_um8_s0'))} against {pct(em('L6_weighted_s0'))}. "
+          "One seed each; a seed was worth about 2 points in the first write-up.</p>")
     o.append(x)
-    o.append("<p>That is the expected outcome once the worked solution exists. A worked solution <em>is</em> a sequence of thinking tokens, of the kind "
-             "the first write-up called a written scratchpad: discrete, supervised, and addressable by everything after it. The latent thoughts had two "
-             "things to offer, extra serial computation before the first character and a place to keep intermediate results, and the worked solution "
-             "now provides both in the open, dozens of characters at a time. What the first write-up measured as their one real effect, a better "
-             "estimate of magnitude, is also covered: the model writes a 4-digit estimate and then corrects it by long division.</p>")
+    o.append(G.fig_think())
+    x = ("<p><strong>A thinking block</strong> is what reasoning models do: ordinary tokens between <code>&lt;think&gt;</code> and "
+         "<code>&lt;/think&gt;</code>, then the answer, with only the answer graded at test time. The worked solution is exactly that. What can differ "
+         "is how the content of the block is learned.")
+    if "U3_disc8_s0" in L and "U0_answer_s0" in L:
+        x += (f" <em>Unsupervised:</em> eight free tokens the model picks from a 1,024-word thinking vocabulary, trained only through the answer: "
+              f"{pct(em('U3_disc8_s0'))}, against {pct(em('U0_answer_s0'))} with no block. The model does not discover what to write.")
+    if all(n in L for n in ("L0_v1_s0", "L2_v20_s0", "U4_loop_s0")):
+        x += (f" <em>Supervised:</em> shown what to write, the same model reaches {pct(em('L0_v1_s0'))} with intermediate values in the block and "
+              f"{pct(em('L2_v20_s0'))} with procedures. Large reasoning models get their blocks from pretraining on human text and from reinforcement on "
+              "final answers; a 3M-parameter model starting from nothing has neither, and the supervision has to stand in for both.")
+    o.append(x + "</p>")
+    e = G.effort_data()
+    if e:
+        ef = e["efforts"]
+        o.append("<h3>Thinking effort</h3>")
+        o.append("<p>Reasoning models also let you choose how much to think. The same thing here: one model trained on a mixture where each "
+                 "problem appears with an empty block (<code>&lt;think&gt;&lt;/think&gt;</code> then the answer), a brief block (one value per operation) or "
+                 "a full block (procedures), marked by which of three tokens opens the block. At inference the opener can be forced, which sets the "
+                 "effort.</p>")
+        o.append(G.effort_table())
+        pick = e["unforced"]["pick"]
+        top = max(pick, key=pick.get)
+        o.append(f"<p>The dial works: {pct(ef['none']['mean'])} at {ef['none']['gflop']:.2f} GFLOP per problem with no thinking, {pct(ef['brief']['mean'])} at "
+                 f"{ef['brief']['gflop']:.2f} with a brief block, {pct(ef['full']['mean'])} at {ef['full']['gflop']:.2f} with a full one. It is not free to train: "
+                 f"at full effort it is {100*(em('L6_weighted_s0')-ef['full']['mean']):.1f} points under the model that only ever wrote full blocks "
+                 f"({pct(em('L6_weighted_s0'))}), because each effort saw a third of the training rows. Left to choose, it opens a {top} block "
+                 f"{pct(pick[top], 0)} of the time.</p>")
+        o.append(G.fig_effort())
+        c3, c2 = G.effort_match(e, "cascade"), G.effort_match(e, "cascade2")
+        tl = ef["full"]["tokens_by_level"]
+        o.append(f"<p>What it barely does is save compute. The obvious policy is to answer with no thinking and think harder only when the model "
+                 f"is unsure of what it wrote, judged by the probability it assigns to its own output. Going up one effort at a time (brief, then "
+                 f"full) costs <em>more</em> than giving every problem a full block: matching always-full accuracy takes {c3['gflop']:.2f} GFLOP per problem "
+                 f"against {ef['full']['gflop']:.2f}. Skipping the brief attempt and going straight to a full block does better: {pct(c2['mean'])} at "
+                 f"{c2['gflop']:.2f} GFLOP, with {pct(c2['share'][0], 0)} of problems answered without thinking. That is a saving of "
+                 f"{100*(1-c2['gflop']/ef['full']['gflop']):.0f}%.</p>")
+        o.append(f"<p>The saving is small because a worked solution is already adaptive. A full-effort output averages {tl[0]:.0f} tokens at level 1 and "
+                 f"{tl[6]:.0f} at level 7, so the problems that can skip their thinking are the ones whose thinking was short anyway: at that threshold "
+                 f"{pct(1-c2['share_full_by_level'][0], 0)} of level-1 problems are answered directly and {pct(1-c2['share_full_by_level'][6], 0)} of level-7 "
+                 "problems, and every failed quick attempt on a hard problem is paid on top of its long solution. The brief block is the worst deal: "
+                 f"it is {pct(ef['brief']['tokens']/ef['full']['tokens'], 0)} as long as a full one and settles only {pct(c3['share'][1], 0)} of problems. In a large "
+                 "reasoning model the dial matters because the default thinking is long whatever the question; here the supervised procedure is "
+                 "already about as short as the problem allows.</p>")
     return "\n".join(o)
 
 
@@ -471,7 +546,10 @@ python build_data2.py 1000000 data23.npz 1,2,3,3,3,5,5    # worked solutions, 22
 python check_gen2.py                                      # re-verifies every arithmetic step; agreement with true answers
 python train2.py --name v23_11m_s0 --data data23.npz --d 384 --L 6 --heads 6 --lo 2 --hi 4 --steps 30000
 python build_data2.py 2000000 ladder/v2.0.npz 1,1,1,1,1,1,1 v2.0   # any earlier scratchpad version: v1, values6, v2.0 ... v2.3
-SCHED_SCRIPT=train2.py python sched.py jobs_ladder.txt runs/ladder 3 --steps 10000 --eval_every 1000 --gen_every 1000   # the ladder + thinking tokens
+python build_data2.py 2000000 ladder/none.npz 1,1,1,1,1,1,1 none     # answer only, no thinking block; "effort" builds the three-effort mixture
+SCHED_SCRIPT=train2.py python sched.py jobs_ladder.txt runs/ladder 3 --steps 10000 --eval_every 1000 --gen_every 1000    # timeline: the supervised blocks, thinking tokens on top
+SCHED_SCRIPT=train2.py python sched.py jobs_ladder2.txt runs/ladder 3 --steps 10000 --eval_every 1000 --gen_every 1000   # timeline: answer only, thinking tokens, unsupervised block, effort dial
+python effort_eval.py runs/ladder/E_effort_s0.pt ladder/effort.npz  # accuracy and compute at each thinking effort; routing by confidence
 python errs.py runs/v2/v23_11m_s0.pt 2 data23.npz         # first wrong step, by kind
 python quant.py runs/v2/v23_11m_s0.pt v2 data23.npz       # post-training quantisation sweep</code></pre>
 """

@@ -1,0 +1,7 @@
+# The start of the timeline, before any thinking block: answer only, then each early idea on top of it.
+U0_answer_s0 --data ladder/none.npz --ut 1
+E_effort_s0 --data ladder/effort.npz --force_open [
+U4_loop_s0 --data ladder/none.npz
+U1_um8_s0 --data ladder/none.npz --ut 1 --think um --K 8
+U2_cont8_s0 --data ladder/none.npz --ut 1 --think cont --K 8
+U3_disc8_s0 --data ladder/none.npz --ut 1 --think disc --K 8

@@ -12,7 +12,7 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else "data2.npz"
 WEIGHTS = [float(x) for x in sys.argv[3].split(",")] if len(sys.argv) > 3 else [1.0] * mg.NLEVELS
 # which version of the scratchpad: v1 (the first write-up's list of values) or one of mathgen2.RUNGS
 VERSION = sys.argv[4] if len(sys.argv) > 4 else "v2.3"
-if VERSION != "v1":
+if VERSION in m2.RUNGS:
     m2.configure(VERSION)
 
 
@@ -25,6 +25,15 @@ def target(e, rng=None):
     if VERSION == "v1":
         tree = mg.parse(e)
         return m2.encode("[" + ",".join(mg.scratch(tree)) + "]" + mg.fmt(mg.ev(tree))) + [mg.EOS]
+    if VERSION == "none":  # no thinking block at all: the answer follows the '=' directly
+        return m2.encode(mg.fmt(mg.ev(mg.parse(e)))) + [mg.EOS]
+    if VERSION == "effort":  # one of three thinking efforts per row, marked by the token that opens the block
+        eff = rng.randrange(3) if rng is not None else 2
+        if eff == 0:
+            return m2.encode("{]" + mg.fmt(mg.ev(mg.parse(e)))) + [mg.EOS]
+        m2.configure("values6" if eff == 1 else "v2.3")
+        sc, ans = m2.solve(e, rng)
+        return m2.encode(("<" if eff == 1 else "[") + sc + "]" + ans) + [mg.EOS]
     sc, ans = m2.solve(e, rng)
     return m2.encode("[" + sc + "]" + ans) + [mg.EOS]
 

@@ -233,7 +233,7 @@ def hbar_chart(items, w=760, xmax=1.0, xticks=(0, .25, .5, .75, 1.0), label_w=21
 
 
 def xy_chart(families, points=(), w=760, h=340, xlab="", ylab="", xmin=None, xmax=None, ymin=0.0, ymax=1.0, yticks=None, xticks=None,
-             vfmt=pct, xfmt=lambda v: f"{v:.0f}", right=130):
+             vfmt=pct, xfmt=lambda v: f"{v:.0f}", right=130, end_labels=True):
     """families: [{name, c, pts: [(x, y, label)]}] drawn as connected lines; points: [{name, c, x, y}] labelled singles."""
     allx = [p[0] for f in families for p in f["pts"]] + [p["x"] for p in points]
     xmin = min(allx) if xmin is None else xmin
@@ -269,7 +269,7 @@ def xy_chart(families, points=(), w=760, h=340, xlab="", ylab="", xmin=None, xma
         o.append(f'<text class="lab" x="{cx+dx:.1f}" y="{cy+4+p.get("dy", 0):.1f}" text-anchor="{anchor}">{esc(p.get("short", p["name"]))}</text>')
         rows.append([p["name"], "", xfmt(p["x"]), vfmt(p["y"])])
     ys = _spread([e[0][1] for e in ends])
-    for (pt, name, v), y in zip(ends, ys):
+    for (pt, name, v), y in zip(ends if end_labels else [], ys):
         if abs(y - pt[1]) > 3:
             o.append(f'<line class="axis" x1="{pt[0]+5:.1f}" y1="{pt[1]:.1f}" x2="{pt[0]+11:.1f}" y2="{y:.1f}"/>')
         o.append(f'<text class="lab" x="{pt[0]+13:.1f}" y="{y+4:.1f}">{esc(name)}</text>')

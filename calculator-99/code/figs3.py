@@ -9,21 +9,40 @@ from charts import *
 GRAY, BLUE, ORANGE, AQUA = "--base", "--s1", "--s2", "--s3"
 LAD, LADLOG, LADOK = F.load_dir("runs/ladder")
 
-# the ladder, in order: (run, short label, what changed)
-RUNGS = [
-    ("L0_v1_s0", "old scratchpad", "The first write-up's scratchpad: a list of intermediate values at 4 significant digits; partial products for multiplication only."),
-    ("L1_values6_s0", "+ 6-digit values, one step per operation", "Every operation is restated with its result (<code>93*88=8184</code>) and values carry 6 significant digits. No procedure is written out."),
-    ("L2_v20_s0", "+ procedures", "Partial products with running sums, long division, Euclid for gcd/lcm/mod, a Newton step for square roots, repeated multiplication for powers, mantissa tables for ln/log."),
-    ("L3_v21_s0", "+ shared lookups, off-grid corrections", "10<sup>x</sup> and 2<sup>x</sup> from a 100-entry table for the fractional part; sin, cos and ln away from their tables by a first-order correction."),
-    ("L4_v22_s0", "+ jittered Newton, e^x split, nCr chains", "Root estimates perturbed in training; e<sup>x</sup> split into whole and fractional part; n!, nPr, nCr as running products; cube roots by Newton."),
-    ("L5_v23_s0", "+ products written in long division", "<code>9p7767r101</code> instead of <code>9r101</code> when the divisor has 3 or more digits."),
-    ("L6_weighted_s0", "+ pool weighted to hard levels", "Training rows per level in the ratio 1:2:3:3:3:5:5 instead of equal."),
+# The timeline: every idea in the order it was tried. (run, label, what it is, run it is compared with, kept?)
+TIMELINE = [
+    ("U0_answer_s0", "answer only", "No thinking of any kind: the first answer character is produced right after the <code>=</code> sign.", None, True),
+    ("U1_um8_s0", '+ 8 "um" thinking tokens', "Thinking tokens with no content: eight copies of one learned filler embedding before the answer.", "U0_answer_s0", False),
+    ("U2_cont8_s0", "+ 8 continuous thinking tokens", "Thinking tokens with latent content: the model's last hidden state is fed back as its next input, eight times, before the answer.", "U0_answer_s0", False),
+    ("U3_disc8_s0", "+ unsupervised thinking block", "A thinking block of 8 free tokens from a 1,024-word thinking vocabulary. The model chooses them; only the answer is graded (straight-through Gumbel-softmax).", "U0_answer_s0", False),
+    ("U4_loop_s0", "+ looped middle block", "Layers 2-3 applied twice at every position. No new parameters, no thinking positions.", "U0_answer_s0", True),
+    ("L0_v1_s0", "+ supervised thinking block: values", "<code>&lt;think&gt;</code> the intermediate values, to 4 significant digits <code>&lt;/think&gt;</code> then the answer. This is the first write-up's scratchpad.", "U4_loop_s0", True),
+    ("L1_values6_s0", "+ 6-digit values, one step per operation", "Inside the block every operation is restated with its result (<code>93*88=8184</code>) and values carry 6 significant digits. No procedure is written out.", "L0_v1_s0", True),
+    ("L2_v20_s0", "+ procedures in the block", "Partial products with running sums, long division, Euclid for gcd/lcm/mod, a Newton step for square roots, repeated multiplication for powers, mantissa tables for ln/log.", "L1_values6_s0", True),
+    ("L3_v21_s0", "+ shared lookups, off-grid corrections", "10<sup>x</sup> and 2<sup>x</sup> from a 100-entry table for the fractional part; sin, cos and ln away from their tables by a first-order correction.", "L2_v20_s0", True),
+    ("L4_v22_s0", "+ jittered Newton, e^x split, nCr chains", "Root estimates perturbed in training; e<sup>x</sup> split into whole and fractional part; n!, nPr, nCr as running products; cube roots by Newton.", "L3_v21_s0", True),
+    ("L5_v23_s0", "+ products written in long division", "<code>9p7767r101</code> instead of <code>9r101</code> when the divisor has 3 or more digits.", "L4_v22_s0", True),
+    ("L6_weighted_s0", "+ pool weighted to hard levels", "Training rows per level in the ratio 1:2:3:3:3:5:5 instead of equal.", "L5_v23_s0", True),
+    ("T_um8_s0", '+ 8 "um" tokens before the block', "The filler thinking tokens again, now in front of a full thinking block.", "L6_weighted_s0", False),
+    ("T_cont8_s0", "+ 8 continuous thoughts before the block", "The latent thinking tokens again, in front of a full thinking block.", "L6_weighted_s0", False),
+    ("E_effort_s0", "+ thinking-effort dial (at full effort)", "One model trained to answer with no block, a brief block (values only) or a full block, selected by the token that opens the block. Shown here with the block forced to full.", "L6_weighted_s0", False),
 ]
+RUNGS = [(n, l, w) for n, l, w, _, _ in TIMELINE]  # (run, short label, what changed)
+
+
+TOK = F.jload("runs/ladder/target_tokens.json") or {}
+
+
+def target_tokens(R):
+    """Mean target tokens per training row, counted over the whole pool (token_stats.py)."""
+    return TOK.get(R["args"]["data"], R["compute"]["mean_target_tokens"])
 
 
 def recs(name, key):
-    """[(step, value)] of one kind of log record."""
-    return [(r["step"], r[key]) for r in LADLOG.get(name, []) if key in r]
+    """[(step, value)] of one kind of log record. The training loss was logged as summed loss / (batch x an estimate of the tokens per row
+    taken from the head of each bucket, which is level 1 only for the short formats); it is rescaled here to the true token count."""
+    scale = LAD[name]["compute"]["mean_target_tokens"] / target_tokens(LAD[name]) if key == "train_loss" and name in LAD else 1.0
+    return [(r["step"], r[key] * scale if key == "train_loss" else r[key]) for r in LADLOG.get(name, []) if key in r]
 
 
 def fpt(d):
@@ -51,22 +70,27 @@ def bucket_positions(data_file, bs):
 
 def ladder_list():
     cap = lambda t: t[0].upper() + t[1:]
-    return "<ol start=\"0\">" + "".join(f"<li><strong>{cap(lab.lstrip('+ '))}.</strong> {what}</li>" for name, lab, what in RUNGS if name in LAD) + "</ol>"
+    out = []
+    for i, (name, lab, what, base, kept) in enumerate(TIMELINE):
+        if name in LAD:
+            out.append(f'<li value="{i}"><strong>{cap(lab.lstrip("+ "))}.</strong> {what}' + ("" if kept else " <em>Not kept.</em>") + "</li>")
+    return "<ol>" + "".join(out) + "</ol>"
 
 
 def ladder_table():
-    rows, prev = [], None
-    for i, (name, lab, what) in enumerate(RUNGS):
+    rows = []
+    for i, (name, lab, what, base, kept) in enumerate(TIMELINE):
         if name not in LAD:
             continue
         R = LAD[name]
         e = F.em(LAD, name)
         loss = [v for _, v in recs(name, "train_loss")][-1]
-        mt = R["compute"]["mean_target_tokens"]
-        rows.append([f"{i}. {lab}", pct(e), ("" if prev is None else f"{100*(e-prev):+.1f}"), pct(F.close(LAD, name)),
-                     f"{mt:.0f}", f"{loss:.4f}", f"{loss*mt:.2f}", f"{train_pflops(R):.0f}", f"{infer_gflops(R):.2f}"])
-        prev = e
-    return table(["version", "exact", "gain", "within 1%", "tokens / problem", "loss / token", "loss / problem", "train PFLOP", "infer GFLOP"], rows)
+        mt = target_tokens(R)
+        gain = "" if base is None or base not in LAD else f"{100*(e-F.em(LAD, base)):+.1f}"
+        rows.append([f"{i}. {lab}", pct(e), gain, "yes" if kept else "no", pct(F.close(LAD, name)), f"{mt:.0f}", f"{loss:.4f}", f"{loss*mt:.2f}",
+                     f"{train_pflops(R):.0f}", f"{infer_gflops(R):.2f}"])
+    return table(["idea (each on top of the kept ones before it)", "exact", "gain", "kept", "within 1%", "tokens / problem", "loss / token", "loss / problem",
+                  "train PFLOP", "infer GFLOP"], rows)
 
 
 def _panel(title, sub, series, xs, xl, **kw):
@@ -75,46 +99,48 @@ def _panel(title, sub, series, xs, xl, **kw):
 
 
 def fig_ladder(metric):
-    """Small multiples: each panel is one change, this version (blue) against the one before it (gray)."""
+    """Small multiples: each panel is one idea, the run with it (blue) against the run it was added to (gray)."""
     panels, tv_rows = [], []
-    have = [(n, l, w) for n, l, w in RUNGS if n in LAD]
-    for i in range(1, len(have)):
-        (pn, pl, _), (cn, cl, _) = have[i - 1], have[i]
+    for i, (cn, cl, _, pn, kept) in enumerate(TIMELINE):
+        if pn is None or cn not in LAD or pn not in LAD:
+            continue
+        title = f"{i}. {cl}" + ("" if kept else " (not kept)")
         if metric == "ans":
             a, b = recs(pn, "ans"), recs(cn, "ans")
             xs = [s for s, _ in b]
-            series = [{"name": "before this change", "c": GRAY, "y": [float(np.mean(v)) for _, v in a]},
-                      {"name": "with this change", "c": BLUE, "y": [float(np.mean(v)) for _, v in b]}]
+            series = [{"name": "before this idea", "c": GRAY, "y": [float(np.mean(v)) for _, v in a]},
+                      {"name": "with this idea", "c": BLUE, "y": [float(np.mean(v)) for _, v in b]}]
             sub = f"full test set: {pct(F.em(LAD, pn))} &rarr; {pct(F.em(LAD, cn))}"
             kw = dict(ymin=0.0, ymax=1.0, yticks=(0, .25, .5, .75, 1.0), xtick_idx=[1, 4, 9])
         else:
             a, b = recs(pn, "train_loss"), recs(cn, "train_loss")
             xs = [s for s, _ in b]
-            series = [{"name": "before this change", "c": GRAY, "y": [v for _, v in a]}, {"name": "with this change", "c": BLUE, "y": [v for _, v in b]}]
+            series = [{"name": "before this idea", "c": GRAY, "y": [v for _, v in a]}, {"name": "with this idea", "c": BLUE, "y": [v for _, v in b]}]
             sub = f"final {series[0]['y'][-1]:.4f} &rarr; {series[1]['y'][-1]:.4f} per token"
             kw = dict(ylog=True, ymin=0.002, ymax=4.0, yticks=(0.01, 0.1, 1.0), yfmt=lambda v: f"{v:g}", vfmt=lambda v: f"{v:.4f}", xtick_idx=[7, 19, 39])
-        panels.append(_panel(cl, sub, series, xs, [f"step {s/1000:g}k" for s in xs], **kw))
-        tv_rows.append([cl] + [("%.4f" % series[k]["y"][-1]) if metric != "ans" else pct(series[k]["y"][-1]) for k in (0, 1)])
-    body = legend([("before this change", GRAY, "line"), ("with this change", BLUE, "line")]) + '<div class="grid2">' + "".join(panels) + "</div>" + \
-        table_view(["change", "before", "after"], tv_rows)
+        panels.append(_panel(title, sub, series, xs, [f"step {s/1000:g}k" for s in xs], **kw))
+        tv_rows.append([title] + [("%.4f" % series[k]["y"][-1]) if metric != "ans" else pct(series[k]["y"][-1]) for k in (0, 1)])
+    body = legend([("before this idea", GRAY, "line"), ("with this idea", BLUE, "line")]) + '<div class="grid2">' + "".join(panels) + "</div>" + \
+        table_view(["idea", "before", "after"], tv_rows)
     if metric == "ans":
-        return figure("Held-out answer accuracy during training, one change per panel",
+        return figure("Held-out answer accuracy during training, one idea per panel",
                       "Exact match of the final answer on 1,400 held-out problems (200 per level), generated greedily every 1,000 steps. "
-                      "Same 3.2M-parameter model and 10,000 steps in every run; each panel compares a version with the one before it.", body)
-    return figure("Training loss, one change per panel",
+                      "Same 3.2M-parameter model and 10,000 steps in every run; each panel compares a run with the run the idea was added to.", body)
+    return figure("Training loss, one idea per panel",
                   "Cross-entropy per target token (log scale), averaged over 250 steps. Each format has its own mix of easy and hard tokens, so the "
-                  "level of two curves in a panel is not comparable; their shape is.", body)
+                  "level of two curves in a panel is not comparable when the format changes; their shape is.", body)
 
 
 def fig_ladder_bars(extra=()):
     items = []
-    for name, lab, _ in RUNGS:
+    for i, (name, lab, _, _, kept) in enumerate(TIMELINE):
         if name in LAD:
-            items.append({"name": lab, "v": F.em(LAD, name), "c": GRAY if name.startswith("L0") else BLUE, "tip": [("within 1%", pct(F.close(LAD, name)))]})
+            items.append({"name": f"{i}. {lab}", "v": F.em(LAD, name), "c": BLUE if kept else GRAY, "tip": [("within 1%", pct(F.close(LAD, name))), ("kept", "yes" if kept else "no")]})
     for lab, e, c in extra:
         items.append({"name": lab, "v": e, "c": BLUE, "tip": [("within 1%", pct(c))]})
-    return figure("Exact match after each change", "Full 14,000-problem test set. The first seven bars are the same 3.2M model trained for 10,000 steps; "
-                  "the last two add training steps and then parameters.", hbar_chart(items, label_w=310))
+    body = legend([("kept", BLUE, "box"), ("tried, not kept", GRAY, "box")]) + hbar_chart(items, label_w=330)
+    return figure("Exact match as the ideas are layered on", "Full 14,000-problem test set. Rows 0 to 14 are the same 3.2M-parameter model trained for 10,000 steps; "
+                  "each idea is added to the kept ones above it. The last rows add training steps, then parameters.", body)
 
 
 def fig_think():
@@ -182,3 +208,44 @@ def fig_train_compute():
                   "x: cumulative forward-plus-backward FLOPs (PFLOP = 10^15). Same model and number of steps; the formats differ in how many positions a step processes.",
                   xy_chart(fams, [], xlab="training compute so far, PFLOP", ylab="held-out answer accuracy", ymin=0.0, ymax=1.0, yticks=[0, .25, .5, .75, 1.0],
                            xticks=[t for t in (0, 10, 20, 30, 40, 50, 60, 70, 80, 90) if t <= xmax * 1.05], xmin=0, xmax=xmax * 1.05, xfmt=lambda v: f"{v:.0f}", right=190))
+
+
+def effort_data():
+    return F.jload("runs/ladder/E_effort_s0.effort.json")
+
+
+def effort_match(e, key):
+    """The cheapest threshold of a routing rule that is at least as accurate as always thinking fully."""
+    full = e["efforts"]["full"]["mean"]
+    return min((c for c in e.get(key, []) if c["mean"] >= full - 0.0005 and c["tau"] <= 1), key=lambda c: c["gflop"], default=None)
+
+
+def effort_table():
+    e = effort_data()
+    if not e:
+        return ""
+    names = [("none", "no thinking: <think></think> answer"), ("brief", "brief: one value per operation"), ("full", "full: procedures written out")]
+    rows = [[lab, pct(e["efforts"][k]["mean"]), f"{e['efforts'][k]['tokens']:.0f}", f"{e['efforts'][k]['gflop']:.2f}"] + [pct(x, 0) for x in e["efforts"][k]["exact"]] for k, lab in names]
+    for key, lab in [("cascade2", "routed: no thinking, full if unsure"), ("cascade", "routed: no thinking, brief if unsure, then full")]:
+        c = effort_match(e, key)
+        if c:
+            rows.append([f"{lab} (threshold {c['tau']:g})", pct(c["mean"]), f"{c['tokens']:.0f}", f"{c['gflop']:.2f}"] + [pct(x, 0) for x in c["exact"]])
+    return table(["thinking effort", "exact", "tokens written", "GFLOP per problem"] + [f"L{i+1}" for i in range(7)], rows)
+
+
+def fig_effort():
+    e = effort_data()
+    if not e:
+        return ""
+    ef = e["efforts"]
+    line = lambda key: [(c["gflop"], c["mean"], f"threshold {c['tau']:g}") for c in sorted(e[key], key=lambda c: c["tau"]) if 0 < c["tau"] <= 1]
+    fam = [{"name": "no thinking, then a full block if unsure", "c": BLUE, "pts": line("cascade2")},
+           {"name": "no thinking, then brief, then full", "c": ORANGE, "pts": line("cascade")}]
+    pts = [{"name": "always full", "c": GRAY, "x": ef["full"]["gflop"], "y": ef["full"]["mean"], "side": "r", "dy": -15}]
+    return figure("Thinking harder only when unsure, against always thinking fully",
+                  "x: forward FLOPs per problem (billions), counting every attempt. Each line sweeps the confidence threshold from 0.3 to 0.999: the model "
+                  "answers with no thinking first and thinks harder when the probability of what it wrote is under the threshold. The axes are zoomed on "
+                  f"always-full; always-none ({pct(ef['none']['mean'])} at {ef['none']['gflop']:.2f}) and always-brief ({pct(ef['brief']['mean'])} at "
+                  f"{ef['brief']['gflop']:.2f}) are off the chart to the lower left.",
+                  xy_chart(fam, pts, xlab="inference, GFLOP per problem", ylab="exact match", ymin=0.85, ymax=0.93, yticks=[0.86, 0.88, 0.90, 0.92],
+                           xticks=[0.5, 0.6, 0.7, 0.8], xmin=0.5, xmax=0.87, xfmt=lambda v: f"{v:.2f}", right=30, end_labels=False))

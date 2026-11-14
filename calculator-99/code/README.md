@@ -12,7 +12,9 @@ Code behind https://bobrenjc93.github.io/explanations/calculator-99/ (follow-up 
 | `train2.py` | bucketed training on worked solutions, optional thinking tokens in front, loss and held-out answer accuracy logged during training; `rescore.py` re-evaluates a checkpoint; `bench2.py` measures throughput |
 | `errs.py` | generates every test solution and reports the first step that differs from the reference, by kind |
 | `quant.py` | post-training weight quantisation sweep |
-| `sched.py`, `jobs_*.txt` | run queues (`jobs_ladder.txt`: one change at a time, plus the thinking-token runs) |
+| `token_stats.py` | true mean target tokens per training row of each pool (`results/ladder/target_tokens.json`); the published logs divide the loss by an estimate from the head of each bucket, and the page rescales them with this |
+| `effort_eval.py` | the thinking-effort dial: accuracy and compute at each forced effort, and the confidence cascade |
+| `sched.py`, `jobs_*.txt` | run queues (`jobs_ladder.txt`, `jobs_ladder2.txt`: the timeline, one idea per run, plus the thinking-token, thinking-block and effort runs) |
 | `figs2.py`, `figs3.py`, `prose2.py`, `make_page2.py`, `charts.py`, `pagedata.py` | generate the page from the results |
 | `../results/` | per-run results and training logs |
 
