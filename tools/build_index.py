@@ -26,6 +26,7 @@ TAGS = {
     "matmul-grad-dtype": ["PyTorch", "autograd", "dtypes"],
     "okc-kernels": ["CUDA", "H200", "kernels"],
     "thinking-tokens": ["transformers", "experiment", "latent reasoning"],
+    "calculator-99": ["transformers", "experiment", "scratchpads", "quantization"],
 }
 
 

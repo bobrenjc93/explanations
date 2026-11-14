@@ -1,0 +1,9 @@
+# architecture knobs on the best 3M recipe (scratchpad + looped middle block + no curriculum), v1 data
+a_base_s0 --mode ut --ut 2 --lo 1 --hi 3 --scratch 1 --curriculum 0
+a_nope_s0 --mode ut --ut 2 --lo 1 --hi 3 --scratch 1 --curriculum 0 --pos nope
+a_rms_s0 --mode ut --ut 2 --lo 1 --hi 3 --scratch 1 --curriculum 0 --norm rms
+# held back until the v2 pilots have had the GPU:
+#a_abs_s0 --mode ut --ut 2 --lo 1 --hi 3 --scratch 1 --curriculum 0 --pos abs
+#a_w8_s0 --mode ut --ut 2 --lo 1 --hi 3 --scratch 1 --curriculum 0 --wbits 8
+#a_w4_s0 --mode ut --ut 2 --lo 1 --hi 3 --scratch 1 --curriculum 0 --wbits 4
+#a_w2_s0 --mode ut --ut 2 --lo 1 --hi 3 --scratch 1 --curriculum 0 --wbits 2

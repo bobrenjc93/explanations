@@ -1,0 +1,17 @@
+# architecture knobs on v2.1 scratchpads: 3.2M parameters, looped middle block, 10k steps each
+b_base_s0
+b_nope_s0 --pos nope
+b_abs_s0 --pos abs
+b_rms_s0 --norm rms
+b_noloop_s0 --ut 1
+b_w4_s0 --wbits 4
+b_w2_s0 --wbits 2
+# the final scratchpad format at the same size and budget, to measure what the three fixes bought
+c_base_s0 --data data23.npz
+# size sweep on the final format (10k steps)
+c_d128_s0 --data data23.npz --d 128
+c_d192_s0 --data data23.npz --d 192 --heads 6
+# the small model on the final format with the full 20k-step budget
+v23_3m_s0 --data data23.npz --steps 20000
+# more weights at fewer bits: ternary at 10.7M parameters (same data and budget as the b_ runs)
+d_w2_11m_s0 --d 384 --L 6 --heads 6 --lo 2 --hi 4 --wbits 2
