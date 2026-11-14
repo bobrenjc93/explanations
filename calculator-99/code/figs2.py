@@ -109,7 +109,7 @@ def abl_table(order):
             f = ABL[name]["final"]
             tf = float(np.mean(ABLLOG[name][-1]["em"])) if name in ABLLOG else float("nan")
             rows.append([lab, pct(em(ABL, name)), pct(close(ABL, name)), pct(tf)] + [pct(x, 0) for x in f["em_gen"]])
-    return table(["variant (3.2M, 10k steps)", "exact", "within 1%", "whole solution"] + [f"L{i+1}" for i in range(7)], rows)
+    return table(["variant (10k steps)", "exact", "within 1%", "whole solution"] + [f"L{i+1}" for i in range(7)], rows)
 
 
 def fig_abl(order, title, cap):

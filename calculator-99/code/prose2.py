@@ -69,7 +69,8 @@ def tldr():
         x = (f"<li><strong>Quantisation.</strong> Rounded after training, the 10.7M model keeps {pct(float(np.mean(q['4'])))} at 4 bits per weight and "
              f"falls apart at 3 ({pct(float(np.mean(q['3'])))}).")
         if has("b_w2_s0"):
-            x += f" Trained with ternary weights from the start, a 3.2M model reaches {E('b_w2_s0')} (full precision, same budget: {E('b_base_s0')})."
+            x += f" Trained with ternary weights from the start, a 3.2M model reaches {E('b_w2_s0')} (full precision, same budget: {E('b_base_s0')})"
+            x += f", and a ternary 10.7M model {E('d_w2_11m_s0')}: more weights at fewer bits is a fair trade here." if has("d_w2_11m_s0") else "."
         b.append(x + "</li>")
     if has(MAIN):
         b.append(f"<li><strong>The price is inference length.</strong> A worked solution averages {ALL[MAIN]['mean_solution_chars']:.0f} characters against "
@@ -258,10 +259,11 @@ def quant():
                  f"{m(qs, 4)}; at 3 bits both break ({m(q, 3)}, {m(qs, 3)}); ternary is noise. A worked solution is a few hundred consecutive correct "
                  "tokens, so a small per-token error rate is fatal, and the larger model has the margin to absorb more rounding. In bits, the 10.7M model "
                  "at 4 bits (5.3 MB) is smaller than the 3.2M model at 16 (6.4 MB), and more accurate.</p>")
-    order = [("b_base_s0", "full precision (baseline)"), ("b_w4_s0", "4-bit weights, trained quantised"), ("b_w2_s0", "ternary weights, trained quantised")]
+    order = [("b_base_s0", "3.2M, full precision (baseline)"), ("b_w4_s0", "3.2M, 4-bit weights"), ("b_w2_s0", "3.2M, ternary weights"),
+             ("d_w2_11m_s0", "10.7M, ternary weights")]
     if any(has(n) for n, _ in order[1:]):
         o.append(F.fig_abl(order, "Training with quantised weights",
-                           "3.2M parameters, 10,000 steps; block weights quantised in every forward pass, straight-through gradient. Exact match."))
+                           "10,000 steps each; block weights quantised in every forward pass, straight-through gradient. Exact match."))
         o.append(F.abl_table(order))
         if has("b_w4_s0", "b_w2_s0"):
             base = F.em(ALL, "b_base_s0")
@@ -269,8 +271,10 @@ def quant():
                  f"points ({E('b_w4_s0')} against {E('b_base_s0')} at full precision for the same budget). Ternary weights (&minus;1, 0, +1 and one scale "
                  f"per row), useless when applied after training, reach {E('b_w2_s0')}: {100*(base-F.em(ALL,'b_w2_s0')):.0f} points under full precision.")
             if has("d_w2_11m_s0"):
-                x += (f" More weights buy part of that back: a ternary 10.7M model on the same data and budget scores {E('d_w2_11m_s0')}, with about a "
-                      "third of the bits of the full-precision 3.2M model.")
+                gap = 100 * (base - F.em(ALL, "d_w2_11m_s0"))
+                x += (f" More weights buy it back: a ternary 10.7M model on the same data and budget scores {E('d_w2_11m_s0')}, "
+                      + ("level with" if abs(gap) < 0.3 else f"{abs(gap):.1f} points {'under' if gap > 0 else 'over'}")
+                      + " the full-precision 3.2M model, in about a third of the bits (2.1 MB against 6.4 MB).")
             o.append(x + "</p>")
     return "\n".join(o)
 
