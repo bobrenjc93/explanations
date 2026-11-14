@@ -10,6 +10,10 @@ WIDTHS = [20, 32, 48, 72, 112, 176, 272, 400, 576]
 OUT = sys.argv[2] if len(sys.argv) > 2 else "data2.npz"
 # rows per level, in units of N_TRAIN: the hard levels have more to memorise and get more of the pool
 WEIGHTS = [float(x) for x in sys.argv[3].split(",")] if len(sys.argv) > 3 else [1.0] * mg.NLEVELS
+# which version of the scratchpad: v1 (the first write-up's list of values) or one of mathgen2.RUNGS
+VERSION = sys.argv[4] if len(sys.argv) > 4 else "v2.3"
+if VERSION != "v1":
+    m2.configure(VERSION)
 
 
 def prompt_row(e):
@@ -18,6 +22,9 @@ def prompt_row(e):
 
 
 def target(e, rng=None):
+    if VERSION == "v1":
+        tree = mg.parse(e)
+        return m2.encode("[" + ",".join(mg.scratch(tree)) + "]" + mg.fmt(mg.ev(tree))) + [mg.EOS]
     sc, ans = m2.solve(e, rng)
     return m2.encode("[" + sc + "]" + ans) + [mg.EOS]
 

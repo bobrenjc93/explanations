@@ -30,6 +30,11 @@ p.add_argument("--seed", type=int, default=0)
 p.add_argument("--eval_every", type=int, default=2000)
 p.add_argument("--compile", default="reduce-overhead")
 p.add_argument("--init", default="", help="checkpoint to start from")
+p.add_argument("--think", default="none", help="thinking tokens in front of the worked solution: none | cont | um")
+p.add_argument("--K", type=int, default=0)
+p.add_argument("--gen_every", type=int, default=0, help="every N steps, generate solutions for a test subset and log answer accuracy")
+p.add_argument("--gen_n", type=int, default=200, help="test problems per level in that subset")
+p.add_argument("--log_every", type=int, default=250)
 p.add_argument("--save", type=int, default=1)
 args = p.parse_args()
 
@@ -53,13 +58,14 @@ te_lv = Z["test_level"]
 truth = [mg.decode(r[: list(r).index(mg.EOS)]) for r in Z["test_A"]]
 NL = mg.NLEVELS
 N = sum(len(x) for x in trP)
-nb = [max(2, round(args.bs * len(x) / N)) for x in trP]
+nb = [max(2, round(args.bs * len(x) / N)) if len(x) else 0 for x in trP]  # short formats leave the widest buckets empty
 nb[int(np.argmax(nb))] += args.bs - sum(nb)
 # expected number of supervised tokens per step: normalises the summed loss so buckets add up to a token average
-tok_norm = float(sum(n * (t[: 200_000] != 0).sum(1).float().mean().item() for n, t in zip(nb, trT)))
+tok_norm = float(sum(n * (t[: 200_000] != 0).sum(1).float().mean().item() for n, t in zip(nb, trT) if n))
 
-cfg = Cfg(vocab=m2.VOCAB, d=args.d, L=args.L, heads=args.heads, mode="ut" if args.ut > 1 else "none", ut=args.ut, lo=args.lo, hi=args.hi,
-          pos=args.pos, norm=args.norm, wbits=args.wbits, max_pos=mg.P_MAX + W[-1] + 40)
+mode = args.think if args.think != "none" and args.K > 0 else ("ut" if args.ut > 1 else "none")
+cfg = Cfg(vocab=m2.VOCAB, d=args.d, L=args.L, heads=args.heads, mode=mode, K=args.K if mode in ("cont", "um") else 0, ut=args.ut, lo=args.lo,
+          hi=args.hi, pos=args.pos, norm=args.norm, wbits=args.wbits, max_pos=mg.P_MAX + W[-1] + 40)
 model = Net(cfg).to(dev)
 if args.init:
     model.load_state_dict(torch.load(args.init, map_location=dev)["state"])
@@ -98,19 +104,31 @@ def evaluate():
     return [float(ok[te_lv == l].mean()) for l in range(NL)]
 
 
+# a fixed subset of the test set (the first gen_n problems of every level) for answer accuracy during training
+rank = np.zeros(len(truth), int)
+for l in range(NL):
+    idx = np.where(te_lv == l)[0]
+    rank[idx] = np.arange(len(idx))
+sub_rows = [torch.from_numpy(np.where(rank[teI[b].numpy()] < args.gen_n)[0]) for b in range(NB)]
+
+
 @torch.no_grad()
-def evaluate_gen():
+def evaluate_gen(subset=False):
     """Greedy generation of the worked solution; the answer is what follows the closing bracket."""
     model.eval()
     preds = [""] * len(truth)
     for b in range(NB):
-        for i in range(0, len(teP[b]), 1024):
+        P, I = (teP[b][sub_rows[b].to(dev)], teI[b][sub_rows[b]]) if subset else (teP[b], teI[b])
+        for i in range(0, len(P), 1024):
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                toks = model.generate(teP[b][i : i + 1024], min(2 * W[b] + 96, W[-1] + 24)).cpu().tolist()
-            for j, row in zip(teI[b][i : i + 1024].tolist(), toks):
+                toks = model.generate(P[i : i + 1024], min(2 * W[b] + 96, W[-1] + 24)).cpu().tolist()
+            for j, row in zip(I[i : i + 1024].tolist(), toks):
                 row = row[: row.index(mg.EOS)] if mg.EOS in row else row
                 preds[j] = m2.decode(row)
     model.train()
+    if subset:
+        ok = np.array([(p.split("]")[-1] if "]" in p else "") == t for p, t in zip(preds, truth)])
+        return [float(ok[(te_lv == l) & (rank < args.gen_n)].mean()) for l in range(NL)]
     ans = [t.split("]")[-1] if "]" in t else "" for t in preds]
     em = np.array([a == b for a, b in zip(ans, truth)])
     close = []
@@ -131,6 +149,7 @@ log = open(f"{args.out}/{args.name}.jsonl", "w")
 t0 = time.time()
 model.train()
 run_loss, n_loss = 0.0, 0
+log_loss, log_n = 0.0, 0
 for step in range(args.steps):
     for grp in opt.param_groups:
         grp["lr"] = lr_at(step)
@@ -141,6 +160,8 @@ for step in range(args.steps):
     opt.zero_grad(set_to_none=False)
     tot = 0.0
     for b in range(NB):
+        if not nb[b]:
+            continue
         idx = torch.randint(len(trP[b]), (nb[b],), device=dev, generator=g)
         torch.compiler.cudagraph_mark_step_begin()
         loss = fns[b](trP[b][idx].long(), trT[b][idx].long())
@@ -154,6 +175,16 @@ for step in range(args.steps):
     if step % 20 == 0:
         run_loss += tot
         n_loss += 1
+        log_loss += tot
+        log_n += 1
+    if (step + 1) % args.log_every == 0:
+        log.write(json.dumps({"step": step + 1, "train_loss": log_loss / max(log_n, 1), "t": time.time() - t0}) + "\n")
+        log_loss, log_n = 0.0, 0
+    if args.gen_every and ((step + 1) % args.gen_every == 0 or step + 1 == args.steps):
+        ans = evaluate_gen(subset=True)
+        log.write(json.dumps({"step": step + 1, "ans": ans, "t": time.time() - t0}) + "\n")
+        log.flush()
+        print(f"{step+1:6d} answers " + " ".join(f"{x:.2f}" for x in ans) + f"  mean {np.mean(ans):.3f}", flush=True)
     if (step + 1) % args.eval_every == 0 or step + 1 == args.steps:
         em = evaluate()
         rec = {"step": step + 1, "loss": run_loss / max(n_loss, 1), "em": em, "t": time.time() - t0, "lr": lr_at(step)}
@@ -171,8 +202,11 @@ n_prompt = np.zeros(len(truth)); n_gen = np.zeros(len(truth))
 for b in range(NB):
     n_prompt[teI[b].numpy()] = (teP[b] != 0).sum(1).cpu().numpy()
 n_gen = np.array([len(t) for t in preds])
-tle = float(np.mean((n_prompt + n_gen) * len(model.sched)))
-res = {"name": args.name, "args": vars(args), "model": model.describe(), "train_time": train_time,
+tle = float(np.mean((n_prompt + n_gen + cfg.K) * len(model.sched)))
+compute = {"target_tokens_per_step": tok_norm, "padded_positions_per_step": float(sum(n * (mg.P_MAX + w + cfg.K) for n, w in zip(nb, W))),
+           "real_positions_per_step": float(sum(n * ((p[:100_000] != 0).sum(1).float().mean().item() + cfg.K) for n, p in zip(nb, trP) if n) + tok_norm),
+           "layer_applications": len(model.sched), "batch": args.bs, "mean_target_tokens": tok_norm / args.bs}
+res = {"name": args.name, "args": vars(args), "model": model.describe(), "train_time": train_time, "compute": compute,
        "final": {"em_gen": lvl(em), "close": lvl(close), "mean_em": float(np.mean(lvl(em))), "tle": tle, "em": lvl(em)},
        "preds": [preds[i] for i in range(0, len(preds), len(preds) // 280)]}
 json.dump(res, open(f"{args.out}/{args.name}.json", "w"))

@@ -154,14 +154,18 @@ def _spread(ys, gap=13):
 
 def line_chart(series, xs, xlabels=None, w=760, h=300, ymax=1.0, ymin=0.0, yticks=(0, .25, .5, .75, 1.0), xtick_idx=None,
                xlab="", end_labels=True, vlines=(), right=118, yfmt=lambda v: f"{100*v:.0f}%", vfmt=pct, tv_header=None,
-               show_legend=True, tv=True):
+               show_legend=True, tv=True, ylog=False):
     """Shared-x multi-series line chart with a crosshair tooltip.
     series: [{name, c (css var), y: [..] (None = missing), dash: bool}]"""
     L, R, T, B = 40, right if end_labels else 14, 10, 34 if xlab else 24
     pw, ph = w - L - R, h - T - B
     n = len(xs)
     px = [L + (pw * i / (n - 1) if n > 1 else pw / 2) for i in range(n)]
-    Y = lambda v: T + ph * (1 - (v - ymin) / (ymax - ymin))
+    if ylog:  # logarithmic y axis (ymin > 0)
+        import math
+        Y = lambda v: T + ph * (1 - (math.log10(max(v, ymin)) - math.log10(ymin)) / (math.log10(ymax) - math.log10(ymin)))
+    else:
+        Y = lambda v: T + ph * (1 - (v - ymin) / (ymax - ymin))
     xlabels = xlabels or [str(x) for x in xs]
     o = []
     for t in yticks:

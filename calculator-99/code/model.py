@@ -137,9 +137,10 @@ class Net(nn.Module):
         self.ln_f = make_norm(d, cfg.norm)
         self.head = nn.Linear(d, cfg.vocab, bias=False)
         # unrolled layer schedule; cfg.ut > 1 repeats the middle block at every position
-        ut = cfg.ut if cfg.mode == "ut" else 1
+        ut = max(cfg.ut, 1)
         self.sched = list(range(cfg.lo)) + ut * list(range(cfg.lo, cfg.hi)) + list(range(cfg.hi, L))
-        self.vlo, self.vhi = (0, len(self.sched)) if cfg.mode == "ut" else (cfg.lo, cfg.hi)
+        # with a looped block, a thought (if any) passes through the whole unrolled stack
+        self.vlo, self.vhi = (0, len(self.sched)) if cfg.mode == "ut" or ut > 1 else (cfg.lo, cfg.hi)
         self.apply(self._init)
         for b in self.blocks:
             for w in (b.proj.weight, b.out.weight):

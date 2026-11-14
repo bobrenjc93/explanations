@@ -4,6 +4,7 @@ import numpy as np
 import mathgen as mg, mathgen2 as m2
 import pagedata as pd
 import figs2 as F
+import figs3 as G
 from charts import pct, table, esc, figure
 
 TITLE = "A calculator LLM at 99%: the scratchpad mattered more than the weights"
@@ -36,7 +37,8 @@ def sp(t):
 
 
 def body():
-    o = [f"<h1>{TITLE}</h1>", sub(), tldr(), diagnosis(), scratchpad(), results(), fixes(), knobs(), quant(), closing(), repro(), FOOT]
+    o = [f"<h1>{TITLE}</h1>", sub(), tldr(), diagnosis(), scratchpad(), ladder(), results(), fixes(), thinking(), compute(), knobs(), quant(),
+         closing(), repro(), FOOT]
     return "\n".join(x for x in o if x)
 
 
@@ -55,6 +57,14 @@ def tldr():
              "trained to write down changes.</li>")
     b.append("<li><strong>The old scratchpad capped a perfect model at 94.9%</strong>: it wrote intermediate values to 4 significant digits, the precision "
              "of the answer. The new one carries 6 digits and spells out procedures: partial products, long division, Euclid, a Newton step.</li>")
+    L = G.LAD
+    if all(n in L for n, _, _ in G.RUNGS):
+        b.append(f"<li><strong>Replayed one change at a time</strong> (3.2M parameters, 10,000 steps): old scratchpad {pct(F.em(L,'L0_v1_s0'))}; 6-digit values "
+                 f"alone {pct(F.em(L,'L1_values6_s0'))}; written procedures {pct(F.em(L,'L2_v20_s0'))}; four smaller fixes {pct(F.em(L,'L6_weighted_s0'))}. "
+                 "Training-loss and held-out accuracy curves for every step are in section 3.</li>")
+    if "T_cont8_s0" in L and "L6_weighted_s0" in L:
+        b.append(f"<li><strong>Thinking tokens add nothing on top of a worked solution.</strong> Eight continuous thoughts in front of it: "
+                 f"{pct(F.em(L,'T_cont8_s0'))}; eight \"um\" tokens: {pct(F.em(L,'T_um8_s0'))}; none: {pct(F.em(L,'L6_weighted_s0'))}.</li>")
     b.append("<li><strong>Three bugs in the training signal</strong>, each found by reading wrong solutions: a Newton step the model learned to skip, table "
              "entries that existed only in the test set, and a division step that asked for a multiply and a subtract at once.</li>")
     if has("b_base_s0", "b_nope_s0", "b_abs_s0", "b_rms_s0"):
@@ -72,9 +82,11 @@ def tldr():
             x += f" Trained with ternary weights from the start, a 3.2M model reaches {E('b_w2_s0')} (full precision, same budget: {E('b_base_s0')})"
             x += f", and a ternary 10.7M model {E('d_w2_11m_s0')}: more weights at fewer bits is a fair trade here." if has("d_w2_11m_s0") else "."
         b.append(x + "</li>")
-    if has(MAIN):
-        b.append(f"<li><strong>The price is inference length.</strong> A worked solution averages {ALL[MAIN]['mean_solution_chars']:.0f} characters against "
-                 f"{OLD_CHARS:.0f} for the old scratchpad: {ALL[MAIN]['final']['tle'] / pd.tle('big2'):.1f} times the compute per problem.</li>")
+    if has(MAIN, SMALL):
+        b.append(f"<li><strong>Compute.</strong> A worked solution averages {ALL[MAIN]['mean_solution_chars']:.0f} characters against {OLD_CHARS:.0f} for the "
+                 f"old scratchpad, {ALL[MAIN]['final']['tle'] / pd.tle('big2'):.1f} times the inference compute at equal size. But at equal inference compute "
+                 f"(about 0.6 GFLOP per problem) the 3.2M model with worked solutions scores {E(SMALL)} and the 10.7M model with the old scratchpad "
+                 f"{pct(pd.em('big2')[0])}: length was a better use of FLOPs than width.</li>")
     return '<div class="tldr"><p><strong>TL;DR.</strong></p><ul>' + "".join(b) + "</ul></div>"
 
 
@@ -128,8 +140,153 @@ def scratchpad():
     return "\n".join(x for x in o if x)
 
 
+def ladder():
+    if sum(n in G.LAD for n, _, _ in G.RUNGS) < 2:
+        return ""
+    o = ["<h2>3. The path, one change at a time</h2>"]
+    o.append("<p>To see what each change bought, the whole path was replayed with one model: 3.2M parameters, the looped middle block, 10,000 steps "
+             "at batch 2,048, a fresh pool of 14M problems per version. Every run logs its training loss every 250 steps and, every 1,000 steps, generates "
+             "full solutions for 1,400 held-out problems and scores the final answers.</p>")
+    extra = []
+    if has(SMALL):
+        extra.append(("same, 20,000 steps", F.em(ALL, SMALL), F.close(ALL, SMALL)))
+    if has(MAIN):
+        extra.append(("10.7M parameters, 30,000 steps", F.em(ALL, MAIN), F.close(ALL, MAIN)))
+    o.append("<p>The versions, each including everything before it:</p>")
+    o.append(G.ladder_list())
+    o.append(G.fig_ladder_bars(extra))
+    o.append(G.ladder_table())
+    o.append("<p>How to read the columns. <em>Tokens / problem</em> is the length of what the model must write. <em>Loss / token</em> is the final "
+             "training cross-entropy averaged over those characters; a format with more easy characters gets a lower number without being better, so "
+             "the comparable figure is <em>loss / problem</em> (the two multiplied): how many nats of uncertainty are left over a whole solution. "
+             "<em>Train PFLOP</em> is forward plus backward compute for the run, <em>infer GFLOP</em> the forward compute to solve one problem "
+             "with a KV cache (section 7 has the accounting).</p>")
+    L = G.LAD
+    if all(n in L for n, _, _ in G.RUNGS):
+        g = lambda a, b: 100 * (F.em(L, b) - F.em(L, a))
+        o.append(f"<p><strong>What the ladder says.</strong> Almost all of it is one rung. Carrying 6 digits and restating every operation, without "
+                 f"writing any procedure, is worth {g('L0_v1_s0', 'L1_values6_s0'):+.1f} points: the precision ceiling was real but it was not what the model "
+                 f"was hitting. Writing the procedures out is worth {g('L1_values6_s0', 'L2_v20_s0'):+.1f}. The four later changes add "
+                 f"{g('L2_v20_s0', 'L6_weighted_s0'):+.1f} together, a point or less each, and each one is aimed at a class of problems rather than at "
+                 "the average. Doubling the steps and then tripling the parameters add the last 2.5.</p>")
+    o.append(G.fig_ladder("ans"))
+    o.append(G.fig_ladder("loss"))
+    o.append("<p>The loss panels show why loss is the wrong yardstick across versions. Per token it falls sixfold when procedures arrive, because a "
+             "worked solution is mostly characters that follow mechanically from the ones before. It then <em>rises</em> at the jitter step, where accuracy "
+             "improves: a jittered root estimate is random by construction, so part of every such target can never be predicted, and that floor is "
+             "what the curve sits on. It rises again per problem with the weighted pool, which simply contains longer problems. Within one panel the "
+             "useful reading is the shape: every version is still descending at 10,000 steps, which is why the 20,000-step run gains 1.5 points.</p>")
+    return "\n".join(o)
+
+
+def thinking():
+    if "T_cont8_s0" not in G.LAD or "L6_weighted_s0" not in G.LAD:
+        return ""
+    base, cont = F.em(G.LAD, "L6_weighted_s0"), F.em(G.LAD, "T_cont8_s0")
+    o = ["<h2>6. Thinking tokens, tested on the new setup</h2>"]
+    o.append("<p>The first write-up was about thinking tokens: positions before the answer that carry no supervised content, either a learned filler "
+             "(\"um\") or a continuous vector fed back from the model's own last hidden state. They did not improve exact match there, and the first "
+             "version of this page dropped them without saying so. Here they are on the final setup: 8 thinking positions between the <code>=</code> "
+             "and the opening bracket of the worked solution, trained end to end from the same loss, everything else identical.</p>")
+    o.append(G.fig_think())
+    x = (f"<p>Eight continuous thoughts: {pct(cont)} against {pct(base)} without them")
+    if "T_um8_s0" in G.LAD:
+        x += f"; eight \"um\" tokens: {pct(F.em(G.LAD, 'T_um8_s0'))}"
+    x += (". One seed each, and in the first write-up a seed was worth about 2 points, so "
+          + ("neither is a detectable change" if abs(cont - base) < 0.02 else "the continuous-thought difference is at the edge of what one seed can show") + ".</p>")
+    o.append(x)
+    o.append("<p>That is the expected outcome once the worked solution exists. A worked solution <em>is</em> a sequence of thinking tokens, of the kind "
+             "the first write-up called a written scratchpad: discrete, supervised, and addressable by everything after it. The latent thoughts had two "
+             "things to offer, extra serial computation before the first character and a place to keep intermediate results, and the worked solution "
+             "now provides both in the open, dozens of characters at a time. What the first write-up measured as their one real effect, a better "
+             "estimate of magnitude, is also covered: the model writes a 4-digit estimate and then corrects it by long division.</p>")
+    return "\n".join(o)
+
+
+def compute():
+    if not has(MAIN):
+        return ""
+    o = ["<h2>7. Compute efficiency</h2>"]
+    o.append("<p><strong>The unit.</strong> One token passing through one transformer layer costs 12&middot;d<sup>2</sup> multiply-adds in its matrix "
+             "products, 24&middot;d<sup>2</sup> FLOPs (attention over the cache adds a few percent at these lengths and is left out). Inference with a KV "
+             "cache costs that once per token per layer application; training costs about three times that per position (forward and backward) for "
+             "every position in the batch, padding included. So inference FLOPs per problem = (prompt + solution tokens) &times; layer applications "
+             "&times; 24d<sup>2</sup>, and training FLOPs = steps &times; positions per step &times; layer applications &times; 72d<sup>2</sup>.</p>")
+    # ---- model table
+    def old_row(label, name, d, apps, width, steps):
+        e, c = pd.em(name)[0], pd.close(name)
+        tr = steps * 2048 * (mg.P_MAX + width) * apps * 72 * d * d / 1e15
+        inf = pd.tle(name) * 24 * d * d / 1e9
+        return [label, f"{pd.R[pd.seeds(name)[0]]['model']['params']/1e6:.1f}M", f"{tr:.0f}", f"{inf:.2f}", pct(e), pct(c)], inf, e
+    rows, pts_old, pts_new = [], [], []
+    for label, name, d, apps, width, steps in [("no scratchpad", "nocurr_none", 256, 4, mg.A_MAX, 20000), ("old scratchpad", "nocurr_cot", 256, 4, mg.C_MAX, 20000),
+                                               ("old scratchpad, looped, 10.7M", "big2", 384, 8, mg.C_MAX, 20000)]:
+        if pd.has(name):
+            r, inf, e = old_row(label, name, d, apps, width, steps)
+            rows.append(r)
+            pts_old.append((label, inf, e))
+    for label, name in [("worked solutions, width 128", "c_d128_s0"), ("worked solutions, width 192", "c_d192_s0"), ("worked solutions, 10k steps", "c_base_s0"),
+                        ("worked solutions, 20k steps", SMALL), ("worked solutions, larger, 30k steps", MAIN)]:
+        if has(name):
+            R = ALL[name]
+            d = R["model"]["d"]
+            pos, _ = G.bucket_positions("data23.npz", 2048)
+            tr = R["args"]["steps"] * pos * len(R["model"]["sched"]) * 72 * d * d / 1e15
+            inf = R["final"]["tle"] * 24 * d * d / 1e9
+            rows.append([label, f"{R['model']['params']/1e6:.1f}M", f"{tr:.0f}", f"{inf:.2f}", E(name), C(name)])
+            pts_new.append((label, inf, F.em(ALL, name)))
+    o.append(table(["model", "parameters", "training, PFLOP", "inference, GFLOP per problem", "exact", "within 1%"], rows))
+    # ---- chart: accuracy against inference compute
+    from charts import xy_chart
+    fam = [{"name": "worked solutions (0.8M, 1.8M, 3.2M, 3.2M longer, 10.7M)", "c": F.BLUE, "pts": [(x, y, lab) for lab, x, y in sorted(pts_new, key=lambda t: (t[1], t[2]))]}]
+    pts = [{"name": lab, "short": lab, "c": F.GRAY, "x": x, "y": y, "side": "r"} for lab, x, y in pts_old]
+    o.append(figure("Exact match against inference compute",
+                    "x: forward FLOPs to solve one problem (billions). Gray squares: the first write-up's models. Blue: worked solutions at five sizes and budgets.",
+                    xy_chart(fam, pts, xlab="inference, GFLOP per problem", ylab="exact match", ymin=0.5, ymax=1.0, yticks=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                             xticks=[0, 0.5, 1.0, 1.5, 2.0], xmin=0, xmax=2.1, xfmt=lambda v: f"{v:.2f}", right=40)))
+    if has(SMALL) and pd.has("big2"):
+        a_inf = ALL[SMALL]["final"]["tle"] * 24 * 256 * 256 / 1e9
+        b_inf = pd.tle("big2") * 24 * 384 * 384 / 1e9
+        o.append(f"<p><strong>Inference.</strong> Worked solutions make every problem about three times longer, and that is the whole cost: "
+                 f"{ALL[MAIN]['final']['tle']:.0f} token-layer evaluations per problem against {pd.tle('big2'):.0f} at the same model size. But length is cheaper than "
+                 f"width. The 3.2M model writing worked solutions spends {a_inf:.2f} GFLOP per problem and scores {E(SMALL)}; the 10.7M model on the old scratchpad "
+                 f"spends {b_inf:.2f} GFLOP and scores {pct(pd.em('big2')[0])}. Same inference compute, "
+                 f"{100*(F.em(ALL, SMALL)-pd.em('big2')[0]):.0f} points apart"
+                 + (f", and the 0.8M model beats it at a quarter of the compute ({E('c_d128_s0')})" if has("c_d128_s0") else "") + ". "
+                 "Spending FLOPs on more written steps bought far more than spending them on d<sup>2</sup>.</p>")
+    o.append(G.fig_train_compute())
+    o.append("<p><strong>Where the characters go.</strong> The share of a worked solution's characters by kind of step, over the test set:</p>")
+    o.append(G.token_budget())
+    b = F.jload("runs/ladder/bench.json")
+    pos, pos_max = G.bucket_positions("data23.npz", 2048)
+    x = (f"<p><strong>Training.</strong> Three things kept the longer sequences affordable. <em>Length buckets:</em> solutions run from 5 to 552 "
+         f"characters, so a batch padded to the longest would process {pos_max/2048:.0f} positions per problem; drawing each optimiser step as nine "
+         f"sub-batches of similar length (gradients accumulated, one update) processes {pos/2048:.0f}, a {pos_max/pos:.1f}x saving, with static shapes. "
+         "<em>Compilation:</em> the forward and backward passes are compiled once per bucket and replayed as CUDA graphs, which removes the "
+         "per-operation overhead that dominates small models")
+    if b:
+        x += (f" (measured on the final 3.2M setup: {b['eager_ms']:.0f} ms per step eager, {b['compiled_ms']:.0f} ms compiled)")
+    x += (". <em>bfloat16</em> autocast throughout.")
+    if b and "tflops" in b:
+        x += (f" With the GPU to itself, a 10,000-step run of the 3.2M model takes {b['compiled_ms']*10000/60000:.0f} minutes and the 30,000-step run of the "
+              f"10.7M model {b['compiled_ms_11m']*30000/60000:.0f}. Even so the card is far from saturated: that is {b['tflops_3m']:.0f} and {b['tflops']:.0f} TFLOPS "
+              "of matrix work on an H100, roughly a tenth of its nominal half-precision peak, because matrices 256 to 384 wide and many small "
+              "element-wise kernels leave most of it idle. The larger model uses the hardware better, so its FLOPs are cheaper in seconds.")
+    o.append(x + "</p>")
+    if sum(n in G.LAD for n, _, _ in G.RUNGS) >= 6:
+        L = G.LAD
+        tp = lambda n: G.train_pflops(L[n])
+        o.append(f"<p><strong>Did each change pay for its tokens?</strong> From the ladder in section 3, at fixed steps: going from the old scratchpad to "
+                 f"written procedures multiplies training compute by {tp('L2_v20_s0')/tp('L0_v1_s0'):.1f} "
+                 f"({tp('L0_v1_s0'):.0f} to {tp('L2_v20_s0'):.0f} PFLOP) and takes exact match from {pct(F.em(L,'L0_v1_s0'))} to {pct(F.em(L,'L2_v20_s0'))}. "
+                 f"The later fixes are nearly free in compute: written division products add {100*(tp('L5_v23_s0')/tp('L4_v22_s0')-1):.0f}% "
+                 f"and the weighted pool {100*(tp('L6_weighted_s0')/tp('L5_v23_s0')-1):.0f}% (it shifts rows toward the long problems), for "
+                 f"{100*(F.em(L,'L5_v23_s0')-F.em(L,'L4_v22_s0')):+.1f} and {100*(F.em(L,'L6_weighted_s0')-F.em(L,'L5_v23_s0')):+.1f} points.</p>")
+    return "\n".join(o)
+
+
 def results():
-    o = ["<h2>3. Results</h2>"]
+    o = ["<h2>4. Where it ends up</h2>"]
     rows = [("3.2M, old scratchpad", F.em(F.ARCH, "a_base_s0"), F.close(F.ARCH, "a_base_s0"), True),
             ("10.7M, old scratchpad", pd.em("big2")[0], pd.close("big2"), True)]
     if has(PILOT):
@@ -166,7 +323,7 @@ def fixes():
     pilot = F.jload("runs/v2/v2_3m_s0.errs.json")
     if not before:
         return ""
-    o = ["<h2>4. Three things that broke, found by reading wrong solutions</h2>"]
+    o = ["<h2>5. Three things that broke, found by reading wrong solutions</h2>"]
     o.append("<p>The first version of the worked solutions already put the 3.2M model above 95%. A tool that generates every test solution and "
              "finds the first step that differs from the reference showed three separate ways the rest went wrong. None was a capacity problem.</p>")
     r = before["root"]
@@ -221,7 +378,7 @@ def fixes():
 def knobs():
     if not has("b_base_s0"):
         return ""
-    o = ["<h2>5. Positional encodings, norms, the loop</h2>"]
+    o = ["<h2>8. Positional encodings, norms, the loop</h2>"]
     order = [("b_base_s0", "RoPE + LayerNorm + looped middle (baseline)"), ("b_rms_s0", "RMSNorm instead of LayerNorm"),
              ("b_noloop_s0", "no looped middle block"), ("b_abs_s0", "learned absolute positions"), ("b_nope_s0", "no positional encoding (NoPE)")]
     o.append(F.fig_abl(order, "Architecture knobs on worked solutions",
@@ -247,7 +404,7 @@ def knobs():
 
 
 def quant():
-    o = ["<h2>6. Weight quantisation</h2>"]
+    o = ["<h2>9. Weight quantisation</h2>"]
     small = f"runs/v2abl/{SMALL}.quant.json" if os.path.exists(f"runs/v2abl/{SMALL}.quant.json") else f"runs/v2/{PILOT}.quant.json"
     o.append(F.fig_ptq([(small, "3.2M parameters", F.ORANGE), (f"runs/v2/{MAIN}.quant.json", "10.7M parameters", F.BLUE)]))
     q, qs = F.jload(f"runs/v2/{MAIN}.quant.json"), F.jload(small)
@@ -280,7 +437,7 @@ def quant():
 
 
 def closing():
-    o = ["<h2>7. What is left, and what it cost</h2>"]
+    o = ["<h2>10. What is left</h2>"]
     e = F.jload(f"runs/v2/{MAIN}.errs.json")
     if e:
         tot = e["total"]
@@ -296,23 +453,25 @@ def closing():
              f"(with a longer run) {E(MAIN)}" if has(SMALL, MAIN) else "At the final format, 3.2M to 10.7M parameters took the model from the mid-90s to 99%") +
              ", mostly through better-memorised tables and steadier long procedures. At the old format the same step went from 77.7% to 83.3%, and "
              "a 0.8M model on the new format beats the 10.7M model on the old one.</li>"
-             "<li><strong>Reading failures beat adding capacity.</strong> Each of the three fixes in section 4 came from looking at where solutions first "
+             "<li><strong>Reading failures beat adding capacity.</strong> Each of the three fixes in section 5 came from looking at where solutions first "
              "diverged, and each was a property of the data, not of the network.</li>"
              "<li><strong>It is slower.</strong> The model now writes out arithmetic the way a person does on paper, and pays for every character.</li>"
              "</ul>")
     o.append("<p><strong>Caveats.</strong> One seed for most runs. The architecture ablations ran at 3.2M parameters and a third of the main budget, on "
-             "the second of three scratchpad versions; the final format differs from it only in the fixes of section 4. Two runs were stopped early when "
+             "the second of three scratchpad versions; the final format differs from it only in the fixes of section 5. Two runs were stopped early when "
              "a fix made them obsolete. Scores are exact string match on the calculator display; the within-1% numbers are there for scale.</p>")
     return "\n".join(o)
 
 
 def repro():
     return """
-<h2>8. Reproduce</h2>
+<h2>11. Reproduce</h2>
 <pre><code>python build_data.py 1500000                              # v1 pool and the 14k held-out test set (data.npz)
 python build_data2.py 1000000 data23.npz 1,2,3,3,3,5,5    # worked solutions, 22M rows, harder levels weighted up
 python check_gen2.py                                      # re-verifies every arithmetic step; agreement with true answers
 python train2.py --name v23_11m_s0 --data data23.npz --d 384 --L 6 --heads 6 --lo 2 --hi 4 --steps 30000
+python build_data2.py 2000000 ladder/v2.0.npz 1,1,1,1,1,1,1 v2.0   # any earlier scratchpad version: v1, values6, v2.0 ... v2.3
+SCHED_SCRIPT=train2.py python sched.py jobs_ladder.txt runs/ladder 3 --steps 10000 --eval_every 1000 --gen_every 1000   # the ladder + thinking tokens
 python errs.py runs/v2/v23_11m_s0.pt 2 data23.npz         # first wrong step, by kind
 python quant.py runs/v2/v23_11m_s0.pt v2 data23.npz       # post-training quantisation sweep</code></pre>
 """

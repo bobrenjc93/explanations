@@ -1,0 +1,11 @@
+# One change at a time: 3.2M parameters, looped middle block, 10k steps, uniform 14M-row pool unless noted.
+# Every run logs training loss every 250 steps and held-out answer accuracy (1,400 test problems) every 1,000.
+L6_weighted_s0 --data data23.npz
+T_cont8_s0 --data data23.npz --think cont --K 8
+T_um8_s0 --data data23.npz --think um --K 8
+L5_v23_s0 --data ladder/v2.3.npz
+L4_v22_s0 --data ladder/v2.2.npz
+L3_v21_s0 --data ladder/v2.1.npz
+L2_v20_s0 --data ladder/v2.0.npz
+L1_values6_s0 --data ladder/values6.npz
+L0_v1_s0 --data ladder/v1.npz

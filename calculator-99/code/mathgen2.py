@@ -24,6 +24,7 @@ The chain is self-consistent: every value is derived from the printed operands, 
 last value rounded to 4 significant digits (agreement with the true answer is measured by check()).
 """
 import math
+import re
 from decimal import Decimal as D, ROUND_DOWN, ROUND_FLOOR, ROUND_HALF_UP, getcontext
 
 import mathgen as mg
@@ -50,6 +51,27 @@ class V:
 
 
 TIE_SAFE = True
+# Each change made on the way to the final format is a switch, so the path can be replayed one step at a time.
+OPT = {
+    "work": True,          # write procedures (partial products, long division, Euclid, Newton, chains); False: one 'op=value' per node
+    "split_pow": True,     # 10^x and 2^x from a 100-entry table for the fractional part
+    "offgrid": True,       # sin/cos off the 0.01 grid and ln off the 4-digit mantissa grid by first-order correction
+    "jitter": True,        # training only: perturb Newton starting estimates
+    "split_exp": True,     # e^x = e^(whole part) * e^(first decimal)
+    "chains": True,        # n! = (n-1)! * n, nPr / nCr as running products, cube roots by Newton
+    "div_products": True,  # write the product in long-division steps for divisors of 3+ digits
+}
+RUNGS = {  # cumulative versions of the scratchpad, in the order they were introduced
+    "values6": dict(work=False, split_pow=False, offgrid=False, jitter=False, split_exp=False, chains=False, div_products=False),
+    "v2.0": dict(work=True, split_pow=False, offgrid=False, jitter=False, split_exp=False, chains=False, div_products=False),
+    "v2.1": dict(work=True, split_pow=True, offgrid=True, jitter=False, split_exp=False, chains=False, div_products=False),
+    "v2.2": dict(work=True, split_pow=True, offgrid=True, jitter=True, split_exp=True, chains=True, div_products=False),
+    "v2.3": dict(work=True, split_pow=True, offgrid=True, jitter=True, split_exp=True, chains=True, div_products=True),
+}
+
+
+def configure(rung):
+    OPT.update(RUNGS[rung])
 
 
 def r6(x):
@@ -146,7 +168,7 @@ def long_div(X, Y, frac):
     A step is 'DrREM', or 'DpPRODrREM' when the divisor has 3+ digits and D >= 2: writing the product D*Y down turns the
     remainder into a plain subtraction (multiply-and-subtract in one go was the commonest way a division went wrong)."""
     steps, q, r, started, nsig, nfrac = [], 0, 0, False, 0, 0
-    show = len(str(Y)) >= 3
+    show = OPT["div_products"] and len(str(Y)) >= 3
 
     def step(d, r):
         steps.append(f"{d}p{d * Y}r{r}" if show and d >= 2 else f"{d}r{r}")
@@ -186,7 +208,7 @@ class Tracer:
         est = D(repr(value))
         ulp = D(1).scaleb(est.adjusted() - 3)
         est = est.quantize(ulp, rounding=ROUND_HALF_UP)
-        if self.rng is not None:
+        if self.rng is not None and OPT["jitter"]:
             est = max(est + ulp * self.rng.randint(-5, 5), ulp)
         return V(est, False)
 
@@ -263,18 +285,18 @@ class Tracer:
             v = self.sqrt(a)
         elif b.d == D("1.5"):
             v = self.mul(a, self.sqrt(a))
-        elif b.d == D("0.333333") and a.d > 0:  # cube root: one Newton step, (2s + x/s^2) / 3
+        elif OPT["chains"] and b.d == D("0.333333") and a.d > 0:  # cube root: one Newton step, (2s + x/s^2) / 3
             est = self.estimate(float(a.d) ** (1 / 3))
             self.steps.append(f"{head}~{s(est.d)}")
             q = self.div(self.div(a, est), est)
             v = self.div(self.add(self.mul(est, V(D(2))), q, "+"), V(D(3)))
-        elif base_is_e and b.d == b.d.quantize(D("0.1")) and abs(b.d) < 30:
+        elif OPT["split_exp"] and base_is_e and b.d == b.d.quantize(D("0.1")) and abs(b.d) < 30:
             n = int(b.d.to_integral_value(rounding=ROUND_FLOOR))
             frac = b.d - n
             if frac == 0:  # whole powers of e are a 15-entry table
                 return self.table(head, math.exp(n))
             v = self.mul(self.table(f"2.71828^{rs(D(n))}", math.exp(n)), self.table(f"2.71828^{s(frac)}", math.exp(float(frac))))
-        elif a.x and a.d in (D(10), D(2)) and b.d == b.d.quantize(D("0.01")) and abs(b.d) < 40:
+        elif OPT["split_pow"] and a.x and a.d in (D(10), D(2)) and b.d == b.d.quantize(D("0.01")) and abs(b.d) < 40:
             n = int(b.d.to_integral_value(rounding=ROUND_FLOOR))
             frac = b.d - n
             t = fl(math.pow(float(a.d), float(frac)))
@@ -301,7 +323,7 @@ class Tracer:
         x0 = x.d.quantize(D("0.01"), rounding=ROUND_HALF_UP)
         delta = x.d - x0
         f = {"sin": math.sin, "cos": math.cos, "tan": math.tan}[name]
-        if delta == 0 or name == "tan" or abs(x0) > D("9.99"):
+        if not OPT["offgrid"] or delta == 0 or name == "tan" or abs(x0) > D("9.99"):
             return self.table(f"{name}({s(x.d)})", f(float(x.d)))
         s0 = lambda: self.table(f"sin({s(x0)})", math.sin(float(x0)))
         c0 = lambda: self.table(f"cos({s(x0)})", math.cos(float(x0)))
@@ -355,7 +377,7 @@ class Tracer:
                     m, e = m / 10, e + 1
                 f = math.log if name == "ln" else math.log10
                 m0 = m.quantize(D(1).scaleb(m.adjusted() - 3), rounding=ROUND_HALF_UP)
-                if m0 != m:  # more than 4 significant digits: ln(m) ~ ln(m0) + (m - m0) / m0
+                if OPT["offgrid"] and m0 != m:  # more than 4 significant digits: ln(m) ~ ln(m0) + (m - m0) / m0
                     base = self.table(f"ln({s(m0)})", math.log(float(m0)))
                     v = self.add(base, self.div(V(m - m0, False), V(m0, False)), "+")
                     if e:
@@ -384,8 +406,19 @@ class Tracer:
             return V(D(node[2]))
         if t == "const":
             return V(PI if node[1] == "pi" else E, False)
+        kids = [self.val(c) for c in (node[2] if t == "fn" else [c for c in node[1:] if isinstance(c, tuple)])]
+        first = len(self.steps)
+        v = self.apply(node, kids)
+        if not OPT["work"]:  # values only: keep the node's last step and drop its work
+            last = re.sub(r":[^=]*", "", self.steps[-1])
+            del self.steps[first:]
+            self.steps.append(last)
+        return v
+
+    def apply(self, node, kids):
+        t = node[0]
         if t == "bin":
-            a, b = self.val(node[2]), self.val(node[3])
+            a, b = kids
             op = node[1]
             if op in "+-":
                 return self.add(a, b, op)
@@ -395,18 +428,22 @@ class Tracer:
                 return self.div(a, b)
             return self.power(a, b, node[2] == ("const", "e"))
         if t == "fn":
-            return self.fn(node[1], [self.val(c) for c in node[2]])
+            return self.fn(node[1], kids)
         if t == "neg":
-            return self.add(V(D(0)), self.val(node[1]), "-")
+            return self.add(V(D(0)), kids[0], "-")
         if t == "fact":
-            n = int(self.val(node[1]).d)
+            n = int(kids[0].d)
             if not 0 <= n <= 13:
                 raise Reject
             return self.fact(n)
         if t in ("nCr", "nPr"):
-            n, r = int(self.val(node[1]).d), int(self.val(node[2]).d)
+            n, r = int(kids[0].d), int(kids[1].d)
             if not 0 <= r <= n:
                 raise Reject
+            if not OPT["chains"]:
+                v = V(D(math.comb(n, r) if t == "nCr" else math.perm(n, r)))
+                self.steps.append(f"{n}n{t[1:]}{r}={s(v.d)}")
+                return v
             p = V(D(n if r else 1))  # n (n-1) ... (n-r+1), one factor at a time
             for k in range(1, r):
                 p = self.mul(p, V(D(n - k)))
@@ -418,8 +455,8 @@ class Tracer:
 
     def fact(self, n):
         """n! = (n-1)! * n, with (n-1)! looked up."""
-        if n < 2:
-            v = V(D(1))
+        if n < 2 or not OPT["chains"]:
+            v = V(D(math.factorial(n)))
         else:
             prev = V(D(math.factorial(n - 1)))
             self.steps.append(f"{n - 1}!={s(prev.d)}")
