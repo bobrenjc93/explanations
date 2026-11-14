@@ -15,6 +15,7 @@ the favicon `<link>` tags using `../`), commit it, then run `python3 tools/build
 
 ## Index
 
+- Nov 14, 2026: [Should a transformer say "um"? A calculator LLM and a thinking-token ablation](https://bobrenjc93.github.io/explanations/thinking-tokens/)
 - Nov 2, 2026: [Ten days of H200 kernel optimization for the Muse Spark Open Kernel Challenge](https://bobrenjc93.github.io/explanations/okc-kernels/)
 - Oct 1, 2026: [Should matmul's backward honor grad_dtype?](https://bobrenjc93.github.io/explanations/matmul-grad-dtype/)
 - Sep 23, 2026: [pytorch#198214: what "the continuation reaches no tensor" means](https://bobrenjc93.github.io/explanations/pr198214/)
