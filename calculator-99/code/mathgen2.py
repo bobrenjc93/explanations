@@ -51,6 +51,8 @@ class V:
 
 
 TIE_SAFE = True
+INT_LIMIT = D(10) ** 12  # values beyond this are rejected (mathgen3 raises both limits for its big-number tier)
+INT_SHOW = D(10) ** 10   # exact integers are displayed in full below this
 # Each change made on the way to the final format is a switch, so the path can be replayed one step at a time.
 OPT = {
     "work": True,          # write procedures (partial products, long division, Euclid, Newton, chains); False: one 'op=value' per node
@@ -80,7 +82,7 @@ def r6(x):
     Tie-safe: an inexact result never ends in 0 or 5 (it takes the neighbour on the true value's side instead),
     so rounding the 6-digit value again to 4 digits can never be fooled by a false ...50 or ...00."""
     if x == x.to_integral_value():
-        if abs(x) >= D(10) ** 12:
+        if abs(x) >= INT_LIMIT:
             raise Reject
         return x.to_integral_value()
     ulp = D(1).scaleb(x.adjusted() - (SIG - 1))
@@ -90,7 +92,7 @@ def r6(x):
         up = down + ulp.copy_sign(x)
         if int(y.scaleb(-ulp.adjusted()).to_integral_value()) % 5 == 0:
             y = down if y == up else up
-    if abs(y) >= D(10) ** 12:
+    if abs(y) >= INT_LIMIT:
         raise Reject
     return y if abs(y) >= D("1e-9") else D(0)
 
@@ -132,7 +134,7 @@ def fmt4(v):
     if d == 0:
         return "0"
     if v.x and d == d.to_integral_value():
-        if abs(d) >= D(10) ** 10:
+        if abs(d) >= INT_SHOW:
             raise Reject
         return s(d)
     e = d.adjusted()

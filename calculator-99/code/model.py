@@ -24,6 +24,9 @@ import torch.nn as nn
 import torch.nn.functional as Fn
 
 PAD = 0
+# True: the teacher-forced pass over the output uses fused attention over [prompt | thoughts | output] instead of building the
+# attention matrix explicitly. Same result; needed for outputs of a thousand tokens and more (train3.py turns it on).
+FUSED = False
 
 
 @dataclass
@@ -106,6 +109,13 @@ class Block(nn.Module):
         if past is None:  # causal, never attend to padding (except yourself)
             mask = (tri & pvalid[:, None, :]) | torch.eye(T, dtype=torch.bool, device=x.device)
             a = Fn.scaled_dot_product_attention(q, k, v, attn_mask=mask[:, None])
+        elif FUSED and T > 1 and tri is not None:
+            pk, pv, ek, ev = past
+            n_p, n_e = pk.shape[2], 0 if ek is None else ek.shape[2]
+            mask = torch.cat([pvalid[:, None, :].expand(B, T, n_p), tri.new_ones(B, T, n_e), tri.expand(B, T, T)], -1)
+            keys = torch.cat([pk, k] if ek is None else [pk, ek, k], 2)
+            vals = torch.cat([pv, v] if ek is None else [pv, ev, v], 2)
+            a = Fn.scaled_dot_product_attention(q, keys, vals, attn_mask=mask[:, None])
         else:
             pk, pv, ek, ev = past
             s = [(q @ pk.transpose(-1, -2)).masked_fill(~pvalid[:, None, None, :], float("-inf"))]
@@ -328,6 +338,39 @@ class Net(nn.Module):
             logits = self.head(self.ln_f(h)).float()
         out = torch.cat(out, 1)
         return (out, logp) if conf else out
+
+    @torch.no_grad()
+    def generate_long(self, P, max_new, eos=2, prefix=None, **kw):
+        """Greedy decoding with preallocated key/value buffers: generate() re-concatenates its cache at every token,
+        which is quadratic in copies and too slow for outputs of thousands of tokens."""
+        final, cache, pvalid = self.think(P, **kw)
+        Pm, B, V = P.shape[1], P.shape[0], len(self.sched)
+        logits = self.head(self.ln_f(final)).float()
+        out = torch.full((B, max_new), eos, dtype=torch.long, device=P.device)
+        done = torch.zeros(B, dtype=torch.bool, device=P.device)
+        n0 = [0 if c[2] is None else c[2].shape[2] for c in cache]  # thoughts already in the cache
+        kbuf = vbuf = None
+        for i in range(max_new):
+            tok = torch.full_like(logits.argmax(-1), prefix[i]) if prefix is not None and i < len(prefix) else logits.argmax(-1)
+            out[:, i] = tok[:, 0]
+            done |= tok[:, 0] == eos
+            if done.all() or i == max_new - 1:
+                break
+            pos = torch.full((1,), Pm + i, device=P.device)
+            new = {}
+            h = self.run(self.embed(tok, pos), pos, 0, V, cache, pvalid, store=new)
+            if kbuf is None:
+                kbuf = [new[v][0].new_empty(B, new[v][0].shape[1], n0[v] + max_new, new[v][0].shape[3]) for v in range(V)]
+                vbuf = [torch.empty_like(b) for b in kbuf]
+                for v in range(V):
+                    if n0[v]:
+                        kbuf[v][:, :, : n0[v]], vbuf[v][:, :, : n0[v]] = cache[v][2], cache[v][3]
+            for v in range(V):
+                n = n0[v] + i
+                kbuf[v][:, :, n], vbuf[v][:, :, n] = new[v][0][:, :, 0], new[v][1][:, :, 0]
+                cache[v][2], cache[v][3] = kbuf[v][:, :, : n + 1], vbuf[v][:, :, : n + 1]
+            logits = self.head(self.ln_f(h)).float()
+        return out
 
     def tle(self, n_prompt, n_ans, K=None):
         """Token-layer evaluations for one problem with KV caching (the FLOPs proxy)."""

@@ -27,6 +27,7 @@ TAGS = {
     "okc-kernels": ["CUDA", "H200", "kernels"],
     "thinking-tokens": ["transformers", "experiment", "latent reasoning"],
     "calculator-99": ["transformers", "experiment", "scratchpads", "quantization"],
+    "calculator-harder": ["transformers", "experiment", "benchmarks", "generalization"],
 }
 
 

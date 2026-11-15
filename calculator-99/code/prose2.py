@@ -45,7 +45,10 @@ def body():
 def sub():
     return ('<p class="sub">Follow-up to <a href="../thinking-tokens/">the thinking-token ablation</a>, which left the calculator at 83.3% exact match. '
             "The ask was to scale it out to 95%+, with more weights and whatever architecture changes help. Same task, same 14,000 held-out test "
-            "problems, same display rule (integers in full, otherwise 4 significant digits). It ends at 99.1%, and most of the distance was not covered by weights.</p>")
+            "problems, same display rule (integers in full, otherwise 4 significant digits). It ends at 99.1%, and most of the distance was not covered by weights.</p>"
+            '<p class="note"><strong>Follow-up:</strong> <a href="../calculator-harder/">A calculator benchmark that takes longer to saturate</a> '
+            "adds seven harder tiers (equations, systems, sums, Newton's method) and tests this model one size beyond what it was trained on: "
+            "it scores 12% and 6% on the first two.</p>")
 
 
 def tldr():

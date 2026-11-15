@@ -28,6 +28,11 @@ STOI = {c: i + 3 for i, c in enumerate(CHARS)}
 ITOS = {i: c for c, i in STOI.items()}
 VOCAB = len(CHARS) + 3
 
+# Size limits of the calculator (mathgen3 raises them for its big-number tier; the seven levels here never reach them).
+INT_SHOW = 10**10   # integers are displayed in full below this
+FRAC_LIMIT = 10**13  # exact rationals are abandoned beyond this
+POW_LIMIT = 10**12
+
 P_MAX = 30  # BOS + expression + '=' (left padded)
 A_MAX = 12  # answer + EOS (right padded)
 C_MAX = 48  # '[' scratch ']' answer EOS (right padded)
@@ -50,7 +55,7 @@ def _place(digs, e):
 def fmt(v):
     if isinstance(v, F):
         if v.denominator == 1:
-            if abs(v.numerator) >= 10**10:
+            if abs(v.numerator) >= INT_SHOW:
                 raise Reject
             return str(v.numerator)
         a = abs(v)
@@ -90,7 +95,7 @@ def _pow(a, b):
         if a == 0 and b < 0:
             raise Reject
         r = a ** int(b)
-        if abs(r.numerator) > 10**12 or r.denominator > 10**12:
+        if abs(r.numerator) > POW_LIMIT or r.denominator > POW_LIMIT:
             raise Reject
         return r
     af, bf = float(a), float(b)
@@ -159,7 +164,7 @@ def ev(node):
             r = a / b
         else:
             r = _pow(a, b)
-        if isinstance(r, F) and (abs(r.numerator) > 10**13 or r.denominator > 10**13):
+        if isinstance(r, F) and (abs(r.numerator) > FRAC_LIMIT or r.denominator > FRAC_LIMIT):
             raise Reject
         return r
     if t == "fn":
