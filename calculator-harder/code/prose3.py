@@ -79,20 +79,24 @@ def tldr():
     if has(A30):
         s90 = G.steps_to(A30, 0.9)
         slow = [G.SHORT[l] for l in range(G.NL) if s90[l] is None]
-        fast = max((s for s in s90[:G.OLD] if s), default=0)
-        b.append(f"<li><strong>It saturates level by level.</strong> In a 30,000-step run the levels pass 90% one after another, the first at "
-                 f"{min(s for s in s90 if s):,} steps and the last at {max(s for s in s90 if s):,}" +
-                 (f"; {', '.join(slow)} never do" if slow else "") + f". It ends at {old(A30)} on the old levels and {new(A30)} on the new.</li>")
+        b.append(f"<li><strong>It saturates level by level, and it does saturate.</strong> In a 30,000-step run the levels pass 90% one after another, the "
+                 f"first at step {min(s for s in s90 if s):,} and the last at {max(s for s in s90 if s):,}" +
+                 (f"; {', '.join(slow)} never do" if slow else "") + f". It ends at {old(A30)} on the old levels and {new(A30)} on the new: about three "
+                 "times as long as the old benchmark took, and then this one is nearly used up too.</li>")
     names = [n for n in (A, A30, BIG) if G.stretch(n)]
     if names:
         n = A30 if A30 in names else names[0]
         b.append("<li><strong>What does not saturate: one size up.</strong> Every tier has a size knob. A stretch set turns each knob past its training "
                  f"range (more digits, more operations, more terms, more iterations). There the {R[n]['args']['steps']//1000}k-step model scores "
-                 f"{pct(G.stretch_mean(n))}, against {new(n)} inside the range. Training on a range does not buy the next one, so this number stays low "
-                 "however long the in-range numbers are polished.</li>")
+                 f"{pct(G.stretch_mean(n))}, against {new(n)} inside the range" +
+                 (f", and the 10.7M model {pct(G.stretch_mean(BIG))}" if BIG in names and n != BIG else "") +
+                 ". Sums stop at about the number of terms a training sum had; Newton's method breaks where the output gets longer than any "
+                 "training solution.</li>")
     if has(A30, BIG):
-        b.append(f"<li><strong>Steps or parameters.</strong> At about the same training compute, 3x the steps gives {new(A30)} on the new tiers and 3.4x the "
-                 f"parameters gives {new(BIG)}.</li>")
+        b.append(f"<li><strong>Steps or parameters.</strong> At about the same training compute, 3x the steps and 3.4x the parameters end in the same "
+                 f"place inside the range ({new(A30)} and {new(BIG)} on the new tiers)" +
+                 (f"; one size up the larger model does better ({pct(G.stretch_mean(BIG))} against {pct(G.stretch_mean(A30))})" if G.stretch(A30) and G.stretch(BIG) else "") +
+                 ".</li>")
     if has(CONT, A):
         b.append(f"<li><strong>Thinking tokens still do nothing</strong> in front of a full block: {allm(CONT)} against {allm(A)} over the 14 levels.</li>")
     return '<div class="tldr"><p><strong>TL;DR.</strong></p><ul>' + "".join(b) + "</ul></div>"
@@ -195,16 +199,24 @@ def saturation():
     cur = [float(np.mean(v)) for _, v in G.ans_curve(n)]
     steps = [s for s, _ in G.ans_curve(n)]
     dips = [steps[i] for i in range(1, len(cur)) if cur[i] < cur[i - 1] - 0.05]
+    names = lambda ls: " and ".join(G.SHORT[l] for l in ls)
+    verb = lambda ls: "passes" if len(ls) == 1 else "pass"
+    f90 = lambda l: f"step {s90[l]:,}" if s90[l] else "never"
     o.append(f"<p>Steps are counted at the evaluation points (every {R[n]['args']['gen_every']:,} steps) on 200 problems per level; the final "
-             f"column is the full 2,000. {' and '.join(G.SHORT[l] for l in first)} pass 90% first, at step {s90[order[0]]:,}; "
-             f"{' and '.join(G.SHORT[l] for l in last)} last, at step {s90[order[-1]]:,}" +
+             f"column is the full 2,000. {names(first)} {verb(first)} 90% first, at step {s90[order[0]]:,}; {names(last)} last, at step {s90[order[-1]]:,}" +
              (f"; {', '.join(never)} are still short of 90% when the run ends" if never else "") +
-             ". The order is not the order of solution length. Sums (409 tokens on average) and Newton's method (1,700) come in early; scientific "
-             "functions, composite expressions, big numbers and long expressions come in last. What takes longest is long arithmetic on long numbers "
-             "and values that have to be recalled exactly, where one slip in one digit is fatal and nothing later in the solution corrects it. A Newton "
-             "iteration, by contrast, forgives: the next iterate repairs a small error in the last." +
+             f". The order is not the order of solution length. Sums (409 tokens on average) are there at {f90(12)} and Newton's method (1,700 "
+             f"tokens) at {f90(13)}, while composite expressions, big numbers and long expressions take until {f90(6)}, {f90(7)} and {f90(8)}. "
+             "What takes longest is long arithmetic on long numbers and values that have to be recalled exactly, where one slip in one digit is "
+             "fatal and nothing later in the solution corrects it. A Newton iteration, by contrast, forgives: the next iterate repairs a small "
+             "error in the last." +
              (f" (The dip at step {dips[0]:,} is the optimiser at its peak learning rate, not the eval: every level falls together and "
               "recovers by the next evaluation.)" if dips else "") + "</p>")
+    o.append("<p>So the answer to the request, inside the training range, is a qualified yes. The old seven levels were past 96% after 10,000 "
+             f"steps of training on them alone. This benchmark needs about three times that to reach {allm(n)}, the tiers arrive in a visible order, "
+             "and four levels (scientific functions, composite expressions, big numbers, long expressions) are still at 92 to 95% at the end. But "
+             "it is the same kind of benchmark as the old one, and with more steps or a larger model it will go the same way. The part that "
+             "does not is the next section.</p>" if n == A30 else "")
     return "\n".join(o)
 
 
@@ -219,14 +231,15 @@ def beyond():
              "The new model gets the same test. Every tier has a size knob, and the <em>stretch set</em> turns each one past its training range: "
              "300 problems per tier, never trained on, with reference solutions of up to 4,000 tokens. Nothing about the procedure changes. A "
              "13-term sum is evaluated exactly like a 12-term one.</p>")
+    o.append(G.stretch_def_table())
     o.append(G.fig_stretch_bars(names))
     o.append(G.stretch_table(names))
     best = max(range(7), key=lambda i: se[i])
     worst = min(range(7), key=lambda i: se[i])
     o.append(f"<p>The {R[n]['args']['steps']//1000}k-step model falls from {pct(float(np.mean(ie)))} inside the range to {pct(float(np.mean(se)))} one size up. It "
              f"holds up best on {m3.LEVELS[best + G.OLD]} ({pct(se[best])}) and worst on {m3.LEVELS[worst + G.OLD]} ({pct(se[worst])}). "
-             "The old model fell from 99% on its own levels to 12% on L8; this one falls about as far going from the range it trained on to the "
-             "next.</p>")
+             f"The old model fell from 99% on its own levels to 12% on L8; this one falls {100*(float(np.mean(ie))-float(np.mean(se))):.0f} points "
+             "going from the range it trained on to the next.</p>")
     o.append(G.fig_knobs(n))
     sa = G.knob_acc(G.STRETCH["kind"], G.STRETCH["level"], G.stretch(n)["ok"], 12)
     if sa:
@@ -246,22 +259,26 @@ def beyond():
         o.append("<p>The first fault in each wrong stretch solution, found the same way as for the in-range errors in section @errors@:</p>")
         o.append(kt)
         pos14, _ = G.stretch_fault_stats(n, G.NL - 1)
+        share_stop, wrote, has_terms = G.sum_stop_stats(n)
         o.append("<p>Each tier breaks in its own way. Big numbers go wrong in the very first step: a few more digits than it has seen are "
-                 "enough to break a carry, a partial product or a division. Linear equations lose terms while collecting a dozen of them. The "
-                 "sums are the clearest case of a procedure that was not really learned: three quarters of the failures are solutions that simply "
-                 "stop early, nearly always before the 13th term, without looking at the upper limit. A training sum never had more than 12. "
+                 "enough to break a carry, a partial product or a division. Linear equations lose track while collecting a dozen terms: the "
+                 "equation they restate is no longer the one the arithmetic produced. Two-digit 3x3 systems go wrong a tenth of the way in, "
+                 "usually by multiplying numbers the determinant does not call for. The sums are the clearest case of a procedure that was not "
+                 f"really learned: {pct(share_stop, 0)} of the failures are correct solutions that simply stop early, after a median of "
+                 f"{wrote:.0f} terms where the problem has {has_terms:.0f}, without looking at the upper limit. A training sum never had more than 12. "
                  "And Newton's method fails where the output becomes longer than anything the model ever "
                  f"wrote: {pct(float(np.mean(pos14 >= 2000)), 0)} of its first faults fall after token 2,000 of the solution, next to the 2,304 "
                  "where every training solution had ended.</p>")
-    ft = G.stretch_formats_table([NONE, VALS, n])
+    ft = G.stretch_formats_table([NONE, VALS, A])
     if ft:
-        o.append("<p>The other formats, for comparison. Values-only is worse almost everywhere, with one instructive exception: it beats full "
-                 "procedures on stretch Newton problems. Its solutions are shorter (about 1,500 tokens where the full ones take 2,800), so 97% of "
-                 "them stay inside the range of output lengths it was trained on.</p>")
+        o.append("<p>The other formats, at the same size and 10,000 steps. Values-only is worse almost everywhere, with one instructive "
+                 "exception: it beats full procedures on stretch Newton problems. Its solutions are shorter (about 1,500 tokens where the full "
+                 "ones take 2,800), so 97% of them stay inside the range of output lengths it was trained on.</p>")
         o.append(ft)
-    o.append("<p>This is the part of the benchmark that takes longest to saturate, because training on it does not use it up. Add the stretch "
-             "range to the training pool and that range will be learned; the set one size above it is then the new stretch set, built by the same "
-             "generator with the knobs turned again. A fixed test set measures whether a model has learned a distribution. A stretch set measures "
+    o.append("<p>This is the part of the benchmark that should take longest to saturate, because it is defined relative to what was trained on. "
+             "Adding the stretch range to the training pool would presumably teach that range, the way the old model's failure on L8 and L9 "
+             "disappeared once they were trained on; but the generator has knobs, and the set one size above the new pool is then the new stretch "
+             "set. (That last step is not run here.) A fixed test set measures whether a model has learned a distribution. A stretch set measures "
              "whether it has learned the procedure, and for these models the answer is: not yet.</p>")
     return "\n".join(o)
 
@@ -292,15 +309,22 @@ def scale():
         return ""
     rows = []
     for n, lab in ((A, "3.2M parameters, 10k steps"), (A30, "3.2M parameters, 30k steps"), (BIG, "10.7M parameters, 10k steps")):
-        h90, h50 = G.horizons(n)
-        rows.append([lab, f"{G.train_pflops(n):.0f}", old(n), new(n), G.fmt_h(h90), G.fmt_h(h50), f"{G.infer_gflops(n):.2f}"])
-    o.append("<p>Two ways to spend three times the training compute: three times the steps, or a model with 3.4 times the parameters (6 layers of "
+        rows.append([lab, f"{G.train_pflops(n):.0f}", old(n), new(n), pct(G.stretch_mean(n)) if G.stretch(n) else "", f"{G.infer_gflops(n):.2f}"])
+    o.append("<p>Two ways to spend about three times the training compute: three times the steps, or a model with 3.4 times the parameters (6 layers of "
              "width 384, the middle two applied twice) for the same number of steps.</p>")
-    o.append(table(["run", "train PFLOP", "L1-7", "L8-14", "90% horizon", "50% horizon", "infer GFLOP / problem"], rows))
-    better = A30 if G.new_mean(A30) > G.new_mean(BIG) else BIG
-    o.append(f"<p>{'More steps' if better == A30 else 'More parameters'} win on the new tiers at equal training compute "
-             f"({new(A30)} with steps, {new(BIG)} with parameters), and the larger model costs "
-             f"{G.infer_gflops(BIG)/G.infer_gflops(A30):.1f} times as much per problem at inference.</p>")
+    o.append(table(["run", "train PFLOP", "L1\u20117", "L8\u201114", "stretch set", "infer GFLOP / problem"], rows))
+    gap = 100 * abs(G.new_mean(A30) - G.new_mean(BIG))
+    txt = (f"<p>Inside the range the two are {'indistinguishable' if gap < 1 else 'close'}: {new(A30)} on the new tiers with more steps, {new(BIG)} "
+           f"with more parameters, and the larger model costs {G.infer_gflops(BIG)/G.infer_gflops(A30):.1f} times as much per problem at inference. ")
+    if G.stretch(A30) and G.stretch(BIG) and G.stretch(A):
+        s0, s1, s2 = G.stretch_mean(A), G.stretch_mean(A30), G.stretch_mean(BIG)
+        e1, e2 = G.stretch_em(A30), G.stretch_em(BIG)
+        txt += (f"One size up they differ. Tripling the steps moves the stretch score from {pct(s0)} to {pct(s1)}, tripling the parameters to {pct(s2)}, "
+                f"and the difference is two tiers: Newton's method ({pct(e2[6], 0)} against {pct(e1[6], 0)}) and quadratics ({pct(e2[3], 0)} against "
+                f"{pct(e1[3], 0)}), where a stretch problem is the same procedure on larger numbers and the larger model's arithmetic is simply more "
+                "reliable. Where the stretch is structural (more terms to collect, more terms to sum, two-digit entries in a 3x3 determinant) "
+                "neither moves: three times the compute buys the range, and very little of the next one.")
+    o.append(txt + "</p>")
     o.append(G.run_heat([A, A30, BIG]))
     return "\n".join(o)
 
@@ -317,11 +341,17 @@ def errors():
     o.append(G.err_table(n))
     e = G.errs(n)["kinds"]
     sub = {(k["level"].split()[0], k["kind"]): k["em"] for k in e}
-    o.append(f"<p>Arithmetic, almost all of it: a digit of a quotient, a carry, a partial product. Inside the tiers, difficulty follows size the "
-             f"way it should. Long expressions go from {pct(sub[('L9', '4 operations')], 0)} at 4 operations to {pct(sub[('L9', '9 operations')], 0)} at 9; "
-             f"3x3 systems are at {pct(sub[('L12', '3x3')], 0)} against {pct(sub[('L12', '2x2')], 0)} for 2x2; and within big numbers the hardest "
-             f"sub-type is plain addition and subtraction of 8-to-14-digit numbers ({pct(sub[('L8', 'add/sub')], 0)}), the one operation whose "
-             "worked solution shows no work: the model has to carry across 14 digits in one step.</p>")
+    ar, op, look, rnd = G.err_shares(n)
+    o.append(f"<p>{pct(ar, 0)} are a wrong digit somewhere in the arithmetic: a quotient digit, a carry, a partial product. {pct(op, 0)} are steps "
+             f"whose arithmetic is right but whose operands are not the ones the solution calls for, a number copied wrong from an earlier line. "
+             f"{pct(look, 0)} are recalled values (a logarithm, a sine), and {pct(rnd, 0)} are not the model's fault at all: it reproduces the "
+             "reference solution exactly, and the reference's 6-digit arithmetic rounds to a different fourth digit than the true answer (the "
+             "ceiling in section 2).</p>")
+    o.append(f"<p>Inside the tiers, difficulty follows size the way it should. Long expressions go from {pct(sub[('L9', '4 operations')], 0)} at 4 "
+             f"operations to {pct(sub[('L9', '9 operations')], 0)} at 9; 3x3 systems are at {pct(sub[('L12', '3x3')], 0)} against "
+             f"{pct(sub[('L12', '2x2')], 0)} for 2x2; and within big numbers the hardest sub-type is plain addition and subtraction of "
+             f"8-to-14-digit numbers ({pct(sub[('L8', 'add/sub')], 0)}), the one operation whose worked solution shows no work: the model has to "
+             "carry across 14 digits in one step.</p>")
     o.append("<details class=tv><summary>Accuracy by sub-type, every new tier</summary>" + G.kind_table([x for x in (A, A30, BIG) if G.errs(x)]) + "</details>")
     return "\n".join(o)
 

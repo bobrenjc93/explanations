@@ -1,7 +1,8 @@
 # The 14-level benchmark. 3.2M parameters unless noted; one line per run (name + train3.py arguments).
+# (--accum 2 splits each optimiser step into two passes: same batch, half the memory, so two runs fit on one GPU.)
 H_full_3m --data hard/full.npz
 H_none_3m --data hard/none.npz
-H_values_3m --data hard/values.npz
+H_values_3m --data hard/values.npz --gen_every 2000 --eval_every 2000
 H_full_3m_30k --data hard/full.npz --steps 30000 --gen_every 2500 --eval_every 2500
-H_full_11m --data hard/full.npz --d 384 --L 6 --heads 6 --lo 2 --hi 4 --gen_every 2000 --eval_every 2000
-H_cont8_3m --data hard/full.npz --think cont --K 8 --gen_every 2500 --eval_every 2500
+H_full_11m --data hard/full.npz --d 384 --L 6 --heads 6 --lo 2 --hi 4 --accum 2 --gen_every 2000 --eval_every 2000
+H_cont8_3m --data hard/full.npz --think cont --K 8 --accum 2 --gen_every 2500 --eval_every 2500

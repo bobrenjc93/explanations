@@ -335,7 +335,7 @@ STRETCH_WHAT = [
     ("coefficients up to about 40", "coefficients up to 400"),
     ("2x2, or 3x3 with one-digit coefficients", "3x3 with two-digit coefficients"),
     ("3 to 12 terms", "13 to 24 terms"),
-    ("solutions up to 2,304 tokens (4 or 5 iterations)", "2,306 to 4,037 tokens (6 to 8 iterations)"),
+    ("solutions up to 2,304 tokens (mostly 4 to 6 iterations)", "solutions of 2,306 to 4,037 tokens (6 to 8 iterations)"),
 ]
 
 
@@ -348,22 +348,31 @@ def stretch_em(n):
     return [s["em"][m3.LEVELS[l]] for l in range(OLD, NL)]
 
 
+def stretch_def_table():
+    if not STRETCH:
+        return ""
+    slv, slen = np.array(STRETCH["level"]), np.array(STRETCH["full_len"])
+    rows = [[m3.LEVELS[l], STRETCH_WHAT[l - OLD][0], STRETCH_WHAT[l - OLD][1], f"{LEN[LV == l].mean():.0f} \u2192 {slen[slv == l].mean():.0f}"]
+            for l in range(OLD, NL)]
+    return table(["level", "in the training pool", "stretch set", "solution tokens, mean"], rows, num_from=3)
+
+
 def stretch_table(names):
     names = [n for n in names if stretch(n)]
     if not names or not STRETCH:
         return ""
-    lab = {n: s for n, l, s, c in RUNS}
-    slv, slen = np.array(STRETCH["level"]), np.array(STRETCH["full_len"])
+    lab = {n: f"{R[n]['model']['params']/1e6:.1f}M, {R[n]['args']['steps']//1000}k steps" for n in names}
     rows = []
     for l in range(OLD, NL):
-        r = [m3.LEVELS[l], STRETCH_WHAT[l - OLD][0], STRETCH_WHAT[l - OLD][1], f"{LEN[LV == l].mean():.0f} \u2192 {slen[slv == l].mean():.0f}"]
+        r = [m3.LEVELS[l]]
         for n in names:
             r += [pct(em(n)[l]), pct(stretch_em(n)[l - OLD])]
         rows.append(r)
-    head = ["level", "in training", "stretch", "solution tokens, mean"]
+    rows.append(["mean"] + [x for n in names for x in (pct(new_mean(n)), pct(stretch_mean(n)))])
+    head = ["level"]
     for n in names:
         head += [f"{lab[n]}: in range", "stretch"]
-    return table(head, rows, num_from=3)
+    return table(head, rows)
 
 
 E2 = hz.EDGES[:-1] + [2305, 3259, 4609, 6001]
@@ -483,3 +492,27 @@ def fig_knobs(n):
                   f"{R[n]['model']['params']/1e6:.1f}M parameters, {R[n]['args']['steps']//1000}k steps. Blue: held-out problems of the sizes in the training pool. "
                   "Orange: sizes the pool never contained. Newton stretch problems are the runs whose solution exceeds the 2,304-token limit of the "
                   "pool, so the two series overlap in iteration count. Sizes with fewer than 15 problems are left out.", body)
+
+
+def sum_stop_stats(n):
+    """Stretch sums: share of the failures that are a correct prefix cut short, and how many terms those failures wrote (median)
+    against how many the problem has (median)."""
+    s = stretch(n)
+    slv, sl = np.array(STRETCH["level"]), np.array(STRETCH["full_len"])
+    m = slv == 12
+    ok, gen = np.array(s["ok"], bool)[m], np.array(s["gen_len"])[m]
+    terms = np.array([int(k.split()[0]) for k in np.array(STRETCH["kind"])[m]])
+    written = terms * gen / sl[m]
+    kinds = s["kinds"][m3.LEVELS[12]]
+    return kinds.get("departs at extra or missing steps", 0) / max(sum(kinds.values()), 1), float(np.median(written[~ok])), float(np.median(terms[~ok]))
+
+
+def err_shares(n):
+    """Shares of the first-fault kinds over the wrong answers on the new tiers: (arithmetic, wrong operands, recalled value, reference rounding)."""
+    e, tot = errs(n), {}
+    for l in range(OLD, NL):
+        for k, v in e["levels"][m3.LEVELS[l]]["kinds"].items():
+            tot[k] = tot.get(k, 0) + v
+    s = sum(tot.values())
+    pick = lambda key: sum(v for k, v in tot.items() if key in k) / s
+    return pick("wrong arithmetic"), pick("operands of a step"), pick("looked-up"), pick("follows the reference")
