@@ -9,7 +9,7 @@ TITLE = "A calculator benchmark that takes longer to saturate"
 DESCRIPTION = ("Seven harder tiers on top of the calculator benchmark that reached 99%: big numbers, long expressions, equations, linear systems, "
                "sums and Newton's method, with worked solutions of up to 2,300 tokens, and a solution-length horizon as the score.")
 PREV = '<a href="../calculator-99/">the calculator at 99%</a>'
-A, A30, BIG, NONE, VALS, CONT = "H_full_3m", "H_full_3m_30k", "H_full_11m", "H_none_3m", "H_values_3m", "H_cont8_3m"
+A, A30, BIG, NONE, VALS, CONT = "H_full_3m", "H_full_3m_30k", "H_full_11m", "H_none_3m", "H_values_3m", "H_um8_3m"
 has = G.have
 R = G.R
 
@@ -98,7 +98,9 @@ def tldr():
                  (f"; one size up the larger model does better ({pct(G.stretch_mean(BIG))} against {pct(G.stretch_mean(A30))})" if G.stretch(A30) and G.stretch(BIG) else "") +
                  ".</li>")
     if has(CONT, A):
-        b.append(f"<li><strong>Thinking tokens still do nothing</strong> in front of a full block: {allm(CONT)} against {allm(A)} over the 14 levels.</li>")
+        d = 100 * (float(np.mean(G.em(CONT))) - float(np.mean(G.em(A))))
+        b.append(f"<li><strong>Thinking tokens: no clear effect.</strong> Eight filler tokens in front of the full block: {allm(CONT)} against "
+                 f"{allm(A)} over the 14 levels ({d:+.1f} points), a difference of the size a different seed makes.</li>")
     return '<div class="tldr"><p><strong>TL;DR.</strong></p><ul>' + "".join(b) + "</ul></div>"
 
 
@@ -325,7 +327,7 @@ def scale():
                 "reliable. Where the stretch is structural (more terms to collect, more terms to sum, two-digit entries in a 3x3 determinant) "
                 "neither moves: three times the compute buys the range, and very little of the next one.")
     o.append(txt + "</p>")
-    o.append(G.run_heat([A, A30, BIG]))
+    o.append(G.run_heat([A, A30, BIG], zero=False))
     return "\n".join(o)
 
 
@@ -361,12 +363,17 @@ def thinking():
     if not has(CONT, A):
         return ""
     o.append("<p>The idea these write-ups started from, positions before the answer with no supervised content, was tested on the old benchmark "
-             "three times and did nothing each time. One more try on the harder one, where there is more to think about: eight continuous thoughts "
-             "(the model's last hidden state fed back as its next input) in front of the full thinking block.</p>")
-    o.append(G.run_heat([A, CONT]))
+             "three times and did nothing each time. One more try on the harder one, where there is more to think about: eight filler thinking "
+             "tokens (one learned embedding, repeated) between the problem and the thinking block.</p>")
+    o.append(G.run_heat([A, CONT], zero=False))
     d = 100 * (float(np.mean(G.em(CONT))) - float(np.mean(G.em(A))))
-    o.append(f"<p>{allm(CONT)} against {allm(A)} over the 14 levels ({d:+.1f} points; one seed each, and a seed was worth about 2 points in the first "
-             f"write-up). On the new tiers {new(CONT)} against {new(A)}. Same answer as before: what helps is thinking whose content is supervised.</p>")
+    up = sum(1 for a, b in zip(G.em(CONT), G.em(A)) if a > b)
+    o.append(f"<p>{allm(CONT)} against {allm(A)} over the 14 levels ({d:+.1f} points), and {new(CONT)} against {new(A)} on the new tiers; "
+             f"{up} of the 14 levels are higher with the tokens. That is one seed each, and in the first write-up the same configuration run "
+             "twice differed by about 2 points, so this is a difference I cannot tell from noise. It is the same size as the "
+             "thinking-token results before it: about a point at most, never the tens of points that supervised content in the block is worth.</p>")
+    o.append("<p>The continuous-thought variant (the model's last hidden state fed back as its next input) is not in this write-up: it needs a "
+             "sequential loop inside every training step, and with 21 length buckets its compilation did not finish in the time I gave it.</p>")
     return "\n".join(o)
 
 

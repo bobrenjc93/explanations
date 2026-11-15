@@ -26,7 +26,7 @@ RUNS = [  # (run, label, short label, colour)
     ("H_full_3m", "thinking block with full procedures", "full procedures", BLUE),
     ("H_full_3m_30k", "full procedures, 3x the steps", "3x steps", AQUA),
     ("H_full_11m", "full procedures, 3.4x the parameters", "3.4x parameters", VIOLET),
-    ("H_cont8_3m", "full procedures + 8 continuous thinking tokens", "+ 8 thoughts", PINK),
+    ("H_um8_3m", "full procedures + 8 filler thinking tokens", "+ 8 thinking tokens", PINK),
 ]
 MAIN = "H_full_3m"
 
@@ -127,12 +127,12 @@ def fig_zero():
                   "and are left out.", body)
 
 
-def run_heat(names=None):
+def run_heat(names=None, zero=True):
     names = [n for n, *_ in RUNS if n in R] if names is None else [n for n in names if n in R]
     lab = {n: l for n, l, *_ in RUNS}
     vals = [em(n) + [old_mean(n), new_mean(n)] for n in names]
     rows = [f"{lab[n]} ({R[n]['model']['params']/1e6:.1f}M, {R[n]['args']['steps']//1000}k steps)" for n in names]
-    z = jload(f"{DIR}/old_11m.hard.json")
+    z = jload(f"{DIR}/old_11m.hard.json") if zero else None
     if z:
         rows.insert(0, "previous write-up's model, zero-shot (10.7M)")
         vals.insert(0, z["em"] + [float(np.mean(z["em"][:OLD])), None])
@@ -182,7 +182,7 @@ def bin_labels():
 
 
 def fig_horizon(names=None):
-    names = [n for n, *_ in RUNS if n in OK and n != "H_cont8_3m"] if names is None else [n for n in names if n in OK]
+    names = [n for n, *_ in RUNS if n in OK and n != "H_um8_3m"] if names is None else [n for n in names if n in OK]
     if not names:
         return ""
     info = {n: (l, s, c) for n, l, s, c in RUNS}
@@ -290,7 +290,7 @@ def kind_table(names):
     return table(["level", "sub-type", "test problems"] + [lab[n] for n in names], rows, num_from=2)
 
 
-def fig_variants(names=("H_none_3m", "H_values_3m", "H_full_3m", "H_cont8_3m")):
+def fig_variants(names=("H_none_3m", "H_values_3m", "H_full_3m")):
     names = [n for n in names if n in R]
     if len(names) < 2:
         return ""
