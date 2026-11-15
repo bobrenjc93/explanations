@@ -516,3 +516,144 @@ def err_shares(n):
     s = sum(tot.values())
     pick = lambda key: sum(v for k, v in tot.items() if key in k) / s
     return pick("wrong arithmetic"), pick("operands of a step"), pick("looked-up"), pick("follows the reference")
+
+
+# ------------------------------------------------------------------ sine probe
+SIN = jload(f"{DIR}/sin_probe.json")
+SIN_MODELS = [("old", "previous write-up's model (10.7M, old 7 levels)", "old model", GRAY), ("small30k", "3.2M, 30k steps", "3.2M", AQUA),
+              ("big", "10.7M, 10k steps", "10.7M", VIOLET)]
+
+
+def _num(a):
+    try:
+        return float(a)
+    except ValueError:
+        return None
+
+
+def sin_stats(name="big"):
+    """In-range and out-of-range behaviour of one model on sin(x), x on the 0.01 grid in [-40, 40]."""
+    x, truth = np.array(SIN["x"]), SIN["truth"]
+    k = np.round(x * 100).astype(int)
+    ok = np.array(SIN["models"][name]["ok"])
+    val = np.array([np.nan if _num(a) is None else _num(a) for a in SIN["models"][name]["ans"]])
+    valid = np.array([t is not None for t in truth])
+    out = np.abs(k) > 999
+    err = np.abs(val - np.sin(x))
+    grid = set(t for t, kk in zip(truth, k) if abs(kk) <= 999)
+    return {"in": float(ok[~out & valid].mean()), "n_in": int((~out).sum()), "out": float(ok[out & valid].mean()), "n_out": int(out.sum()),
+            "near": float(ok[out & (np.abs(k) <= 2000) & valid].mean()), "far": float(ok[(np.abs(k) > 2000) & valid].mean()),
+            "ints": float(ok[out & (k % 100 == 0) & valid].mean()), "n_ints": int((out & (k % 100 == 0)).sum()),
+            "non_ints": float(ok[out & (k % 100 != 0) & valid].mean()),
+            "err_in": float(np.nanmean(err[~out])), "err_out": float(np.nanmean(err[out])),
+            "bounded": float(np.nanmean(np.abs(val[out]) <= 1)), "table": float(np.mean([a in grid for a in np.array(SIN["models"][name]["ans"])[out]]))}
+
+
+def fig_sin_curve(name="big", lim=30, step=10):
+    """The model's answers to sin(x) as dots over the true curve; the range asked for directly in training is shaded."""
+    if not SIN:
+        return ""
+    x, truth, ans = SIN["x"], SIN["truth"], SIN["models"][name]["ans"]
+    idx = [i for i in range(len(x)) if abs(x[i]) <= lim and round(x[i] * 100) % step == 0]
+    w, h = 760, 330
+    L, R_, T, B = 40, 14, 24, 34
+    pw, ph = w - L - R_, h - T - B
+    X = lambda v: L + pw * (v + lim) / (2 * lim)
+    Y = lambda v: T + ph * (1 - (max(-1.15, min(1.15, v)) + 1.15) / 2.3)
+    col = dict((m[0], m[3]) for m in SIN_MODELS)[name]
+    o = [f'<rect x="{X(-9.99):.1f}" y="{T}" width="{X(9.99) - X(-9.99):.1f}" height="{ph}" fill="var(--grid)" opacity=".45"/>',
+         f'<text x="{X(0):.1f}" y="{T - 8}" text-anchor="middle" class="lab">asked for directly in training: -9.99 to 9.99</text>']
+    for t in (-1, -0.5, 0, 0.5, 1):
+        o.append(f'<line class="grid" x1="{L}" x2="{L + pw}" y1="{Y(t):.1f}" y2="{Y(t):.1f}"/>')
+        o.append(f'<text x="{L - 6}" y="{Y(t) + 4:.1f}" text-anchor="end">{t:g}</text>')
+    for t in range(-lim, lim + 1, 10):
+        o.append(f'<text x="{X(t):.1f}" y="{T + ph + 15}" text-anchor="middle">{t}</text>')
+    o.append(f'<text x="{L + pw / 2:.1f}" y="{h - 3}" text-anchor="middle" class="lab">x</text>')
+    fine = [-lim + j * 0.05 for j in range(int(2 * lim / 0.05) + 1)]
+    o.append(f'<path class="ln" d="M{" L".join(f"{X(v):.1f},{Y(math.sin(v)):.1f}" for v in fine)}" stroke="var({GRAY})"/>')
+    for i in idx:
+        v = _num(ans[i])
+        if v is not None:
+            o.append(f'<circle cx="{X(x[i]):.1f}" cy="{Y(v):.1f}" r="2.6" fill="var({col})" stroke="var(--surface)" stroke-width="1"/>')
+    o.append(f'<line class="xh" x1="0" x2="0" y1="{T}" y2="{T + ph}"/>')
+    data = {"w": w, "px": [round(X(x[i]), 1) for i in idx], "xl": [SIN["text"][i] for i in idx],
+            "s": [{"n": "true value", "c": GRAY, "v": [truth[i] or "0" for i in idx]}, {"n": "the model's answer", "c": col, "v": [ans[i] for i in idx]}]}
+    svg = f'<svg viewBox="0 0 {w} {h}" role="img" data-xh="{esc(json.dumps(data))}">' + "".join(o) + "</svg>"
+    xa, k = np.array(x), np.round(np.array(x) * 100).astype(int)
+    ok = np.array(SIN["models"][name]["ok"])
+    val = np.array([np.nan if _num(a) is None else _num(a) for a in ans])
+    err = np.abs(val - np.sin(xa))
+    rows = []
+    for lo in range(0, 40, 5):
+        m = (np.abs(k) >= lo * 100) & (np.abs(k) < (lo + 5) * 100) if lo else (np.abs(k) < 500)
+        rows.append([f"{lo} to {lo + 5}", f"{int(m.sum()):,}", pct(float(ok[m].mean())), f"{float(np.nanmean(err[m])):.4f}"])
+    lab = dict((m[0], m[1]) for m in SIN_MODELS)[name]
+    return figure("The model's sin(x) against the real one",
+                  f"{lab}. One dot per 0.{step:02d} of x. A right answer sits on the curve. Hover for the values.",
+                  legend([("sin(x)", GRAY, "line"), ("the model's answer", col, "box")]) + svg +
+                  table_view(["|x|", "problems (0.01 grid)", "exact match", "mean |answer - sin x|"], rows))
+
+
+SINW = jload(f"{DIR}/sin_probe_wide.json")
+SIND = jload(f"{DIR}/sin_density.json")
+SIN_EDGES = [10, 20, 40, 70, 100, 150, 200, 300]
+
+
+def _sin_arrays(S, name):
+    x = np.array(S["x"])
+    val = np.array([np.nan if _num(a) is None else _num(a) for a in S["models"][name]["ans"]])
+    return x, val, np.array(S["models"][name]["ok"]), np.array([t is not None for t in S["truth"]])
+
+
+def sin_bins(name):
+    """Per range of x, from far negative to far positive: (label, key, exact, within 0.1, sign right, n).
+    The inside bin uses the 0.01 grid; the outside bins the wide probe (every 0.07 out to +-300)."""
+    out = []
+    xw, vw, okw, validw = _sin_arrays(SINW, name)
+    tw = np.sin(xw)
+
+    def stat(m, x, v, t, ok):
+        mm = m & ~np.isnan(v)
+        return float(ok[m].mean()), float(np.mean(np.abs(v[mm] - t[mm]) < 0.1)), float(np.mean(np.sign(v[mm]) == np.sign(t[mm]))), int(m.sum())
+
+    pairs = list(zip(SIN_EDGES, SIN_EDGES[1:]))
+    for a, b in reversed(pairs):
+        out.append((f"-{b} to -{a}", f"-{a}-{b}") + stat((xw <= -a) & (xw > -b) & validw, xw, vw, tw, okw))
+    x, v, ok, valid = _sin_arrays(SIN, name)
+    out.append(("-9.99 to 9.99", "inside") + stat((np.abs(x) < 9.995) & valid, x, v, np.sin(x), ok))
+    for a, b in pairs:
+        out.append((f"{a} to {b}", f"+{a}-{b}") + stat((xw >= a) & (xw < b) & validw, xw, vw, tw, okw))
+    return out
+
+
+def fig_sin_within():
+    if not SIN or not SINW:
+        return ""
+    series, labs = [], None
+    for name, lab, short, c in SIN_MODELS:
+        b = sin_bins(name)
+        labs = [r[0] for r in b]
+        series.append({"name": lab, "short": short, "c": c, "y": [r[3] for r in b]})
+    mid = [i for i, l in enumerate(labs) if l.startswith("-9.99")][0]
+    return figure("How close the answer is, by where x is",
+                  "Share of answers within 0.1 of sin(x). Answers unrelated to x would score about 12%. The middle bin is the range asked for "
+                  "directly in training; the bins get wider away from it.",
+                  line_chart(series, labs, labs, h=300, xtick_idx=[0, 2, 4, mid, 10, 12, 14], xlab="x", right=96, tv_header="x"))
+
+
+def sin_table(name="big"):
+    if not SIN or not SINW:
+        return ""
+    dens = (SIND or {}).get("per_million_composite_problems", {})
+    rows = []
+    for lab, key, exact, within, sign, n in sin_bins(name):
+        d = "every grid point, many times" if key == "inside" else f"{dens.get(key, 0):,.0f}"
+        rows.append([lab, d, pct(exact), pct(within, 0), pct(sign, 0)])
+    return table(["x", "times sin(x) is recalled per 1M composite training problems", "exact (4 digits)", "within 0.1", "right sign"], rows)
+
+
+def sin_flip(name, a=10, b=20):
+    """For x in (-b, -a]: share of answers within 0.1 of sin(|x|), the answer with the minus sign ignored."""
+    x, v, _, _ = _sin_arrays(SINW, name)
+    m = (x <= -a) & (x > -b) & ~np.isnan(v)
+    return float(np.mean(np.abs(v[m] + np.sin(x[m])) < 0.1))

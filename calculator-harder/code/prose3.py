@@ -30,7 +30,7 @@ def allm(n, d=1):
     return pct(float(np.mean(G.em(n))), d)
 
 
-SECTIONS = ["used_up", "tiers", "block", "results", "saturation", "beyond", "length", "scale", "errors", "thinking", "compute", "repro"]
+SECTIONS = ["used_up", "tiers", "block", "results", "saturation", "beyond", "sine", "length", "scale", "errors", "thinking", "compute", "repro"]
 
 
 def body():
@@ -285,6 +285,57 @@ def beyond():
     return "\n".join(o)
 
 
+def sine():
+    if not G.SIN or not G.SINW:
+        return ""
+    s = G.sin_stats("big")
+    bins = {r[1]: r for r in G.sin_bins("big")}
+    old_bins = {r[1]: r for r in G.sin_bins("old")}
+    o = ["<h2>7. The simplest case: does it know sine?</h2>"]
+    o.append("<p>After the stretch set, a fair question is whether these models have learned any function at all, or only how to act on inputs "
+             "like the ones they have met. Sine is the cleanest probe in the benchmark, because the answer outside the trained range is fully "
+             "determined by the answers inside it: sin(x) = sin(x - 2&pi;), and sin(-x) = -sin(x). In training, sine is asked for directly only "
+             "for x between -9.99 and 9.99 on a grid of 0.01. That is 1,999 arguments, and in the worked solution each one is a single recalled "
+             "line (<code>sin(1.5)=0.997494</code>). The probe is that one question, <code>sin(x)</code>, for x far outside the grid.</p>")
+    o.append(G.fig_sin_curve("big"))
+    o.append(f"<p>Inside the range the 10.7M model is right on all {s['n_in']:,} grid points, to four digits. One step outside, exact match is "
+             f"{pct(s['near'])} for |x| between 10 and 20 and {pct(s['far'])} beyond 20. So the short answer is no: it does not calculate sine once x "
+             "leaves the range. But the dots are not noise either, and the two sides of the figure are different.</p>")
+    o.append(f"<p><strong>To the left</strong>, below -10, the answers have nothing to do with the true value: within 0.1 of it "
+             f"{pct(bins['-10-20'][3], 0)} of the time, which is what unrelated numbers get, and the right sign less than half the time. If "
+             f"anything they lean toward sin(|x|), the answer with the minus sign ignored ({pct(G.sin_flip('big'), 0)} within 0.1 of that between "
+             f"-20 and -10, {pct(G.sin_flip('old'), 0)} for the old model). The model computes sin(3) and sin(-3) perfectly and has not picked up "
+             "that one is minus the other. <strong>To the right</strong>, above 10, the answers "
+             f"follow the wave: the sign is right {pct(bins['+10-20'][4], 0)} of the time between 10 and 20 and the value is within 0.1 "
+             f"{pct(bins['+10-20'][3], 0)} of the time. They sit near the right peak or trough and miss the digits.</p>")
+    o.append(G.fig_sin_within())
+    d = G.SIND
+    o.append("<p>The asymmetry is in the training data. Composite problems take sines of computed values, <code>sin(5.5^2)</code>, "
+             "<code>sin(7.5+4.8)</code>, <code>sin(31*pi)</code>, and those values are always positive, mostly below 100, and few: "
+             f"{d['distinct_outside']:,} distinct arguments beyond the grid in {d['problems']:,} composite problems. The table lines the two up.</p>")
+    o.append(G.sin_table("big"))
+    o.append(f"<p>Three regimes, and they follow how densely the function was sampled. On the dense grid, every value many times: exact. Where "
+             f"training left scattered samples: the right neighbourhood, fading as the samples thin out, and gone past 100 "
+             f"({pct(bins['+70-100'][3], 0)} within 0.1 at 70 to 100, {pct(bins['+100-150'][3], 0)} at 100 to 150). Where it left none: nothing. "
+             "The old model saw about ten times as many composite problems as this one and is better in the middle regime "
+             f"({pct(old_bins['+10-20'][3], 0)} within 0.1 between 10 and 20), identical on the grid, and on the left wrong in the same way, more consistently: it mostly "
+             "answers sin(|x|).</p>")
+    pr = d["probe"]
+    mb, mo = pr["models"]["big"], pr["models"]["old"]
+    o.append(f"<p>The split between recalling and interpolating can be made exact. Of the {pr['n']:,} probe points between 10 and 40, {pr['met']} are "
+             f"arguments that occur somewhere in the solutions of {d['problems']:,} sampled composite problems. The 10.7M model gets {pct(mb['met']['exact'], 0)} of them to four digits and "
+             f"{pct(mb['unmet']['exact'])} of the other {pr['n'] - pr['met']:,}; the old model {pct(mo['met']['exact'], 0)} and "
+             f"{pct(mo['unmet']['exact'])}. Exact answers are entries it has met. But the points it never met are still within 0.1 "
+             f"{pct(mb['unmet']['within'], 0)} of the time ({pct(mo['unmet']['within'], 0)} for the old model) with the right sign "
+             f"{pct(mb['unmet']['sign'], 0)} of the time, nearly the same as the ones it did meet.</p>")
+    o.append("<p>So the models do generalise, in the way a smooth interpolator does: between samples, an argument they have never seen gets an "
+             "answer near the right one. What they do not do is use the structure of the function. The period and the odd symmetry are both "
+             "sitting in the 1,999 values they know exactly, and neither is applied one step outside them. That is the stretch set's result in "
+             "its plainest form: accuracy inside the range says the model has the entries, and only the step outside says whether it has the "
+             "rule.</p>")
+    return "\n".join(o)
+
+
 def length():
     o = ["<h2>7. Is it the length?</h2>"]
     if not has(A):
@@ -408,7 +459,10 @@ SCHED_SCRIPT=train3.py python sched.py jobs_hard.txt runs/hard 2   # all runs
 python eval_old.py runs/v2/v23_11m_s0.pt hard/full.npz        # the previous model, zero-shot
 python errs3.py runs/hard/H_full_3m_30k hard/full.npz         # first fault in each wrong solution
 python build_stretch.py hard/stretch.json 300                 # the beyond-the-range test set
-python eval_stretch.py runs/hard/H_full_3m_30k.pt             # a checkpoint on it</code></pre>
+python eval_stretch.py runs/hard/H_full_3m_30k.pt             # a checkpoint on it
+python sin_probe.py runs/hard/sin_probe.json big=runs/hard/H_full_11m.pt small30k=runs/hard/H_full_3m_30k.pt old=runs/v2/v23_11m_s0.pt
+python sin_probe.py runs/hard/sin_probe_wide.json range=-30000:30000:7 big=... small30k=... old=...   # out to +-300
+python sin_density.py runs/hard/sin_density.json              # how often training solutions recall sin(x), by size of x</code></pre>
 """
 
 

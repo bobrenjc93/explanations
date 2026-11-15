@@ -12,6 +12,7 @@ Code behind https://bobrenjc93.github.io/explanations/calculator-harder/ (follow
 | `train3.py` | training on the 14 levels; logs loss, per-level held-out accuracy and per-problem outcomes during training |
 | `eval_old.py` | a model trained on the old seven levels, zero-shot on the new tiers it can read |
 | `build_stretch.py`, `eval_stretch.py` | a test set beyond the training range (every tier's size knob turned up) and a checkpoint's score on it |
+| `sin_probe.py` | sin(x) on a fine grid from -40 to 40: inside and outside the range sine was asked for in training |
 | `horizon.py` | accuracy against solution length, and the solution-length horizon |
 | `errs3.py` | re-checks the model's own worked solutions and names the first fault |
 | `sched.py`, `jobs_hard.txt`, `run_hard.sh` | the run queue |
