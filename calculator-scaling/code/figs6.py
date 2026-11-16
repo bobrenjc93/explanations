@@ -75,6 +75,9 @@ def nfmt(n):
     return f"{n/1e6:.1f}M" if n >= 1e5 else f"{n/1e3:.0f}k"
 
 
+FIT_MIN = 0.5  # runs that get fewer than half the problems right are before the power-law regime (error cannot exceed 100%)
+
+
 def fit_power(xs, ys):
     """Least squares in log-log: y = a * x^(-alpha). -> (a, alpha)"""
     b, loga = np.polyfit(np.log(xs), np.log(ys), 1)
@@ -116,7 +119,7 @@ def run_table(names=None):
 # ------------------------------------------------------------------ parameters
 def size_fit(upto=None):
     """Power law of the excess in-range error against parameters over the size sweep (optionally only the runs up to a size)."""
-    rs = [r for r in runs(SIZE) if upto is None or r["N"] <= upto]
+    rs = [r for r in runs(SIZE) if (upto is None or r["N"] <= upto) and r["acc"] >= FIT_MIN]
     return fit_power([r["N"] for r in rs], [excess(r) for r in rs]), rs
 
 
@@ -186,7 +189,8 @@ def fig_compute():
 
 def steps_fit(key="3.2M"):
     rs = runs(STEPS[key])
-    return (fit_power([r["steps"] for r in rs], [excess(r) for r in rs]), rs) if len(rs) >= 3 else (None, rs)
+    ok = [r for r in rs if r["acc"] >= FIT_MIN]
+    return (fit_power([r["steps"] for r in ok], [excess(r) for r in ok]), rs) if len(ok) >= 3 else (None, rs)
 
 
 # ------------------------------------------------------------------ data
@@ -269,7 +273,7 @@ def slip_table():
 def compute_fit():
     """Power law of the excess in-range error against training compute over every full-data run, whatever its size and length.
     -> ((a, gamma), runs, largest factor by which a run misses the line)"""
-    rs = [r for r in runs(ALL) if r["frac"] >= 1]
+    rs = [r for r in runs(ALL) if r["frac"] >= 1 and r["acc"] >= FIT_MIN]
     a, g = fit_power([r["pflop"] for r in rs], [excess(r) for r in rs])
     miss = max(abs(math.log(excess(r) / (a * r["pflop"] ** (-g)))) for r in rs)
     return (a, g), rs, math.exp(miss)

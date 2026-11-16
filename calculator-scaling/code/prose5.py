@@ -46,9 +46,10 @@ def tldr():
     if len(rs) >= 4:
         (a, al), _ = S.size_fit()
         lo, hi = rs[0], rs[-1]
+        first = next(r for r in rs if r["acc"] >= S.FIT_MIN)
         b.append(f"<li><strong>Parameters.</strong> At a fixed 10,000 steps, in-range error falls from {pct(1 - lo['acc'])} at {nf(lo['N'])} parameters to "
-                 f"{pct(1 - hi['acc'])} at {nf(hi['N'])}. Above the floor it follows a power law in parameters with exponent {al:.2f}: ten times the "
-                 f"parameters cuts the excess error by a factor of {10 ** al:.1f}.</li>")
+                 f"{pct(1 - hi['acc'])} at {nf(hi['N'])}. From {nf(first['N'])} up, the error above the floor is a power law in parameters with exponent "
+                 f"{al:.2f}: ten times the parameters cuts it by a factor of {10 ** al:.0f}.</li>")
     (sf, srs) = S.steps_fit()
     if sf:
         b.append(f"<li><strong>Training length.</strong> For the 3.2M model the excess error falls with steps to the power {sf[1]:.2f}. In this regime "
@@ -69,7 +70,7 @@ def tldr():
     if len(st) >= 4:
         top = max(st[:-1], key=lambda r: r["stretch_mean"])
         if st[-1]["stretch_mean"] < top["stretch_mean"] + 0.03:
-            b.append(f"<li><strong>One size up does have an asymptote, and it is low.</strong> Accuracy on problems one size beyond the training "
+            b.append(f"<li><strong>One size up lags far behind and flattens at the top of the sweep.</strong> Accuracy on problems one size beyond the training "
                      f"range rises from {pct(st[0]['stretch_mean'])} at {nf(st[0]['N'])} parameters to {pct(top['stretch_mean'])} at {nf(top['N'])} and is no "
                      f"higher at {nf(st[-1]['N'])} ({pct(st[-1]['stretch_mean'])}), while in-range error keeps falling. Scale buys accuracy inside the "
                      "range it is trained on; it does not buy the next range.</li>")
@@ -107,10 +108,15 @@ def size():
     o = ["<h2>2. Parameters</h2>"]
     o.append(S.fig_size())
     worst = min(range(S.NL), key=lambda l: rs[-1]["em"][l])
+    below = [r for r in rs if r["acc"] < S.FIT_MIN]
+    first = next(r for r in rs if r["acc"] >= S.FIT_MIN)
     o.append(f"<p>Error over the 14 levels goes from {pct(1 - rs[0]['acc'])} at {nf(rs[0]['N'])} parameters to {pct(1 - rs[-1]['acc'])} at "
-             f"{nf(rs[-1]['N'])}. Measured above the floor, the fall is close to a straight line on log-log axes: a power law with exponent "
-             f"{al:.2f}, so each tenfold increase in parameters divides the excess error by about {10 ** al:.1f}. The new tiers start further "
-             f"behind ({pct(1 - rs[0]['new'])} error against {pct(1 - rs[0]['old'])} on the old levels at {nf(rs[0]['N'])}) and close the gap as the "
+             f"{nf(rs[-1]['N'])}. " +
+             (f"The {nf(below[-1]['N'])} model has barely started: it gets two-digit addition and little else, and since error cannot go above 100% "
+              "it sits under the line the others are on. " if below else "") +
+             f"From {nf(first['N'])} up, the error measured above the floor is close to a straight line on log-log axes: a power law with exponent "
+             f"{al:.2f}, so each tenfold increase in parameters divides the excess error by about {10 ** al:.0f}. The new tiers start further "
+             f"behind ({pct(1 - first['new'])} error against {pct(1 - first['old'])} on the old levels at {nf(first['N'])}) and close the gap as the "
              f"model grows ({pct(1 - rs[-1]['new'])} against {pct(1 - rs[-1]['old'])} at {nf(rs[-1]['N'])}).</p>")
     o.append(S.fig_size_levels())
     small = rs[0]
@@ -208,10 +214,10 @@ def asymptote():
              (" The law holds one step further out than it was fitted on." if abs(math.log((1 - big['acc'] - floor + 1e-4) / (pred - floor))) < 0.5 else
               " The largest model falls short of the line: at a fixed 10,000 steps a model this size is limited by training length, and more "
               "parameters alone no longer pay at the same rate.") + "</p>")
-    (a2, al2), _ = S.size_fit()
+    (a2, al2), fitted = S.size_fit()
     need = lambda err: (a2 / max(err - floor, 1e-6)) ** (1 / al2)
     o.append(f"<p>Read forwards, the fit over all sizes says 1% error in range would take about {nf(need(0.01))} parameters at this training "
-             f"length, and 0.5% about {nf(need(0.005))}. Those are extrapolations of a line through {len(rs)} points, with one seed per point, and the last points "
+             f"length, and 0.5% about {nf(need(0.005))}. Those are extrapolations of a line through {len(fitted)} points, with one seed per point, and the last points "
              "sit close enough to the floor that the exponent is sensitive to where the floor is put. The qualitative answer is firmer than the "
              "numbers: in range, more parameters and more steps keep paying until the scratchpad's own precision is what is left.</p>")
     return "\n".join(o)
@@ -238,6 +244,12 @@ def stretch():
               "no better out of range. " if flat else "") +
              f"In-range error fell by a factor of {(1 - lo['acc']) / (1 - hi['acc']):.0f} over the sweep; out of range, error went from "
              f"{pct(1 - lo['stretch_mean'])} to {pct(1 - hi['stretch_mean'])}.</p>")
+    full = G.jload("runs/scale/S_n19.stretch.json")
+    full11 = G.jload("runs/hard/H_full_11m.stretch.json")
+    if full and full11 and flat:
+        f19, f11 = float(np.mean(list(full["em"].values()))), float(np.mean(list(full11["em"].values())))
+        o.append(f"<p>Since that comparison carries the argument, both models were also scored on all 2,100 stretch problems instead of the "
+                 f"first 700: {pct(f11)} for the {nf(top['N'])} model and {pct(f19)} for the {nf(hi['N'])} one.</p>")
     o.append("<p>The tiers explain the shape. " +
              (f"{' and '.join(moved)} respond to scale: there a larger problem is the same procedure on larger numbers or a longer chain of "
               "familiar steps, and a model whose arithmetic is more reliable gets further. " if moved else "") +
