@@ -8,7 +8,9 @@ from charts import *
 GRAY, BLUE, ORANGE, AQUA = "--base", "--s1", "--s2", "--s3"
 DIR = "runs/hard"
 BEFORE = "H_full_3m_30k"
-AFTER = "W_wide_3m" if os.path.exists(f"{DIR}/W_wide_3m.json") else "W_wide_7k"  # the full fine-tune, or its step-7,000 checkpoint
+# the full fine-tune once it and all of its evaluations exist, otherwise its step-7,000 checkpoint
+FULL = [f"{DIR}/W_wide_3m.json"] + [f"{DIR}/W_wide_3m.{s}.json" for s in ("gap", "stretch", "stretch2")] + [f"{DIR}/sin_final_fine.json", f"{DIR}/sin_final_far.json"]
+AFTER = "W_wide_3m" if all(os.path.exists(p) for p in FULL) else "W_wide_7k"
 SETS = {"stretch": "hard/stretch.json", "gap": "hard/gap.json", "stretch2": "hard/stretch2.json"}
 SET = {k: G.jload(p) for k, p in SETS.items()}
 OLD, NL = m3.OLD, m3.NLEVELS
@@ -177,8 +179,9 @@ def fig_edges():
 
 
 # ------------------------------------------------------------------ sine
-SINF = G.jload(f"{DIR}/sin_wide_fine.json")   # every 0.05 out to +-130
-SINL = G.jload(f"{DIR}/sin_wide_far.json")    # every 0.37 out to +-1000
+_SIN = "sin_final" if AFTER == "W_wide_3m" else "sin_wide"
+SINF = G.jload(f"{DIR}/{_SIN}_fine.json")   # every 0.05 out to +-130
+SINL = G.jload(f"{DIR}/{_SIN}_far.json")    # every 0.37 out to +-1000
 SIN_RANGES = [(0, 10), (10, 40), (40, 100), (100, 300), (300, 1000)]
 _CEIL = {}
 

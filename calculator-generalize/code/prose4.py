@@ -40,16 +40,20 @@ def tldr():
     b.append(f"<li><strong>Between the sizes it has seen: yes.</strong> Sizes left out of training in the middle of the range (a 9-term sum when 8 "
              f"and 10 were trained) are solved {pct(g)} of the time, against {pct(n)} for the sizes on either side.</li>")
     b.append(f"<li><strong>Past the largest size it has seen: the edge moves, it does not go away.</strong> After the stretch sizes are added to "
-             f"training they go from {pct(s1b)} to {pct(s1a)}. The sizes one step beyond the new pool go from {pct(s2b)} to {pct(s2a)}.</li>")
+             f"training they go from {pct(s1b)} to {pct(s1a)}. The sizes one step beyond the new pool go from {pct(s2b)} to {pct(s2a)}, about "
+             f"where one size up stood before the pool was widened ({pct(s1b)}).</li>")
     b.append(f"<li><strong>Sine by procedure works where it was trained and fades beyond, instead of stopping dead.</strong> With argument "
              f"reduction written into the thinking block and trained for |x| up to 100, exact match on sin(x) between 10 and 100 goes from "
              f"{pct(np.mean([sb[1][1], sb[2][1]]))} to {pct(np.mean([sa[1][1], sa[2][1]]))}, on both sides of zero, which is the ceiling of the procedure. "
              f"Between 100 and 300 it is {pct(sa[3][1])}, and beyond 300 {pct(sa[4][1])}, where the table had {pct(sb[3][1])} and {pct(sb[4][1])}.</li>")
     d = [100 * (y - x) for x, y in zip(fa["final"]["em"], fb["final"]["em"])]
     w = min(range(len(d)), key=lambda l: d[l])
-    b.append(f"<li><strong>The original range pays a little.</strong> The standard 14-level test goes from {pct(float(np.mean(fa['final']['em'])))} to "
-             f"{pct(float(np.mean(fb['final']['em'])))}, most of it on {m3.LEVELS[w]} ({d[w]:+.1f} points), whose training rows are now shared "
-             "with a second size range.</li>")
+    ma, mb = float(np.mean(fa["final"]["em"])), float(np.mean(fb["final"]["em"]))
+    if mb >= ma - 0.002:
+        b.append(f"<li><strong>The original range is unharmed.</strong> The standard 14-level test goes from {pct(ma)} to {pct(mb)}.</li>")
+    else:
+        b.append(f"<li><strong>The original range pays a little.</strong> The standard 14-level test goes from {pct(ma)} to {pct(mb)}, most of it "
+                 f"on {m3.LEVELS[w]} ({d[w]:+.1f} points), whose training rows are now shared with a second size range.</li>")
     b.append("<li><strong>So: these models interpolate over size and extrapolate poorly.</strong> What looks like a learned procedure is a "
              "procedure for the sizes covered, plus a fading margin. Each of the three fixes worked about as far as its training data went.</li>")
     return '<div class="tldr"><p><strong>TL;DR.</strong></p><ul>' + "".join(b) + "</ul></div>"
@@ -77,7 +81,9 @@ def setup():
              "            0.000888*0.961056:...=0.000853418; -0.276356+0.000853418=-0.275503; sin(-0.279112)=-0.275503;\n"
              "            sin(37.42)=-0.275503]-0.2755</code></pre>")
     c = fb["compute"]
-    cut = ("" if fb["args"]["steps"] >= 10000 else " The run was planned for 10,000 steps with a decaying rate at the end; the machine "
+    cut = (" The machine restarted under the run three times; it was resumed from its step-7,000 checkpoint, and the last 3,000 steps drew "
+           "from a fresh 3.75M-row sample of the same generator." if fb["args"]["steps"] >= 10000 else
+           " The run was planned for 10,000 steps with a decaying rate at the end; the machine "
            "restarted three times under it, and what is reported is its last saved checkpoint, at step 7,000 and still at the full rate.")
     o.append(f"<p>The pool has 15M rows, a mean solution of {c['mean_target_tokens']:.0f} tokens and solutions of up to 4,096. Fine-tuning used half "
              f"the original learning rate.{cut} Three test sets sit outside it: the stretch set (now inside the pool's sizes, problems unseen), a "
