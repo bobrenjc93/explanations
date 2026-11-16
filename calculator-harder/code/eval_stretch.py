@@ -10,6 +10,13 @@ from diagnose import diagnose, fault_offset
 path = sys.argv[1]
 S = json.load(open(sys.argv[2] if len(sys.argv) > 2 else "hard/stretch.json"))
 SUFFIX = sys.argv[3] if len(sys.argv) > 3 else "stretch"
+if len(sys.argv) > 4:  # only the first n problems of every level (the scaling runs use 100)
+    seen, keep_ = {}, []
+    for j, l in enumerate(S["level"]):
+        seen[l] = seen.get(l, 0) + 1
+        if seen[l] <= int(sys.argv[4]):
+            keep_.append(j)
+    S = {k: [v[j] for j in keep_] for k, v in S.items()}
 M.FUSED = True
 dev = "cuda"
 CAP = 12000

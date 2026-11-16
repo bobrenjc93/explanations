@@ -34,6 +34,7 @@ p.add_argument("--gen_every", type=int, default=1000, help="every N steps, gener
 p.add_argument("--gen_n", type=int, default=200, help="test problems per level in that subset")
 p.add_argument("--log_every", type=int, default=250)
 p.add_argument("--accum", type=int, default=1, help="split every optimiser step into this many passes over the buckets (same batch, less memory)")
+p.add_argument("--data_frac", type=float, default=1.0, help="train on a fixed random fraction of the pool's rows (the data-scaling runs)")
 p.add_argument("--save", type=int, default=1)
 p.add_argument("--ckpt_every", type=int, default=0, help="save a resumable checkpoint every N steps; a run restarted with the same name continues from it")
 p.add_argument("--time_steps", type=int, default=0, help="print per-bucket wall time for this many steps after the warm-up (diagnostic)")
@@ -63,6 +64,11 @@ NL = m3.NLEVELS
 N = sum(len(x) for x in trP)
 nb = [max(2, round(args.bs // args.accum * len(x) / N)) if len(x) else 0 for x in trP]  # rows per bucket in one pass
 nb[int(np.argmax(nb))] += args.bs // args.accum - sum(nb)
+# a fixed random subset of every bucket when --data_frac < 1: the same rows are revisited for the whole run
+gsub = torch.Generator().manual_seed(1234)
+keep = [None if args.data_frac >= 1 or not len(x) else torch.randperm(len(x), generator=gsub)[: max(n, round(len(x) * args.data_frac))].to(dev)
+        for x, n in zip(trP, nb)]
+unique_rows = int(sum(len(x) if k is None else len(k) for x, k in zip(trP, keep)))
 # expected number of supervised tokens per step: normalises the summed loss so buckets add up to a token average
 tok_norm = args.accum * float(sum(n * (t[:: max(1, len(t) // 200_000)] != 0).sum(1).float().mean().item() for n, t in zip(nb, trT) if n))
 
@@ -186,7 +192,9 @@ for step in range(start, args.steps):
     for b in [b for _ in range(args.accum) for b in range(NB)]:
         if not nb[b]:
             continue
-        idx = torch.randint(len(trP[b]), (nb[b],), device=dev, generator=g)
+        idx = torch.randint(len(trP[b]) if keep[b] is None else len(keep[b]), (nb[b],), device=dev, generator=g)
+        if keep[b] is not None:
+            idx = keep[b][idx]
         torch.compiler.cudagraph_mark_step_begin()
         tb = time.time()
         loss = fns[b](trP[b][idx].long(), trT[b][idx].long())
@@ -234,6 +242,43 @@ train_time = time.time() - t0
 if args.save:
     torch.save({"cfg": model.describe(), "state": model.state_dict()}, f"{args.out}/{args.name}.pt")
 tg = time.time()
+
+
+@torch.no_grad()
+def tf_stats(Ps, Ts, levels=None):
+    """Teacher-forced cross-entropy per token and whole-target exact match over lists of (prompt, target) buckets."""
+    model.eval()
+    nll = tok = 0.0
+    okc = n = 0
+    per = np.zeros((NL, 2))
+    for b in range(NB):
+        P, T = Ps[b], Ts[b]
+        for i in range(0, len(P), rows_at(b)):
+            Pb, Tb = P[i : i + rows_at(b)].long(), T[i : i + rows_at(b)].long()
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                logits = model(Pb, Tb)
+            ce = Fn.cross_entropy(logits.flatten(0, 1).float(), Tb.flatten(), ignore_index=0, reduction="none").view(Tb.shape).sum(1)
+            cnt = (Tb != 0).sum(1)
+            nll += ce.sum().item()
+            tok += cnt.sum().item()
+            okc += ((logits.argmax(-1) == Tb) | (Tb == 0)).all(1).sum().item()
+            n += len(Pb)
+            if levels is not None:
+                lv_b = te_lv[levels[b][i : i + rows_at(b)].numpy()]
+                for l in range(NL):
+                    m = torch.from_numpy(lv_b == l).to(dev)
+                    per[l] += [ce[m].sum().item(), cnt[m].sum().item()]
+    model.train()
+    return nll / max(tok, 1), okc / max(n, 1), (per[:, 0] / np.maximum(per[:, 1], 1)).tolist()
+
+
+test_loss, test_tf, test_loss_level = tf_stats(teP, teT, teI)
+gtr = torch.Generator(device=dev).manual_seed(7)
+tr_rows = [torch.randint(len(trP[b]) if keep[b] is None else len(keep[b]), (max(2, round(4000 * nb[b] * args.accum / args.bs)),), device=dev, generator=gtr)
+           if nb[b] else torch.zeros(0, dtype=torch.long, device=dev) for b in range(NB)]
+tr_rows = [r if keep[b] is None else keep[b][r] for b, r in enumerate(tr_rows)]
+train_loss, train_tf, _ = tf_stats([trP[b][tr_rows[b]] for b in range(NB)], [trT[b][tr_rows[b]] for b in range(NB)])
+print(f"test loss {test_loss:.4f} tf-exact {test_tf:.4f} | train (rows it trained on) loss {train_loss:.4f} tf-exact {train_tf:.4f} | unique rows {unique_rows:,}", flush=True)
 em, ans, preds = evaluate_gen()
 close = within(ans)
 n_prompt = np.zeros(len(truth))
@@ -243,7 +288,9 @@ n_gen = np.array([len(t) + 1 for t in preds])
 apps = len(model.sched)
 compute = {"target_tokens_per_step": tok_norm, "padded_positions_per_step": float(args.accum * sum(n * (pw + w + cfg.K) for n, pw, w in zip(nb, PW, W))),
            "layer_applications": apps, "batch": args.bs, "mean_target_tokens": tok_norm / args.bs}
+compute["unique_rows"] = unique_rows
 res = {"name": args.name, "args": vars(args), "model": model.describe(), "train_time": train_time, "gen_time": time.time() - tg, "compute": compute,
+       "loss": {"test": test_loss, "test_tf_exact": test_tf, "test_level": test_loss_level, "train": train_loss, "train_tf_exact": train_tf},
        "final": {"em": lvl(em), "close": lvl(close), "mean_em": float(np.mean(lvl(em))), "tle": float(np.mean((n_prompt + n_gen + cfg.K) * apps)),
                  "tle_level": lvl((n_prompt + n_gen + cfg.K) * apps), "gen_tokens_level": lvl(n_gen)}}
 json.dump(res, open(f"{args.out}/{args.name}.json", "w"))

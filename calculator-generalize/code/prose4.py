@@ -27,7 +27,9 @@ def head():
             f'<p class="sub">Follow-up to {PREV}, which ended with a model that scores 97.7% inside the sizes it trained on, 27% one size '
             "beyond them, and knows sine as a table of 1,999 values. The question left open there was whether these models generalise at all. "
             "Three tests, run as one fine-tune: leave sizes out in the middle of the range, widen the range and test past the new edge, and "
-            "replace the sine table with a procedure.</p>")
+            "replace the sine table with a procedure.</p>"
+            '<p class="note"><strong>Follow-up:</strong> <a href="../calculator-scaling/">Scaling laws for a calculator</a> measures how error '
+            "falls with parameters, training length and distinct data, inside the training range and one size beyond it.</p>")
 
 
 def tldr():

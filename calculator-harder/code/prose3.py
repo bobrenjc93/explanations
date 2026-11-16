@@ -59,7 +59,8 @@ def head():
             "harder problems, equations included, and an eval that takes longer to saturate. Same small transformer, same recipe (a supervised "
             "thinking block before the answer), 14 levels instead of 7, and worked solutions of up to 2,300 tokens.</p>"
             '<p class="note"><strong>Follow-up:</strong> <a href="../calculator-generalize/">Does the calculator generalise?</a> leaves sizes '
-            "out in the middle of the range, widens the pool and tests past its new edge, and gives sine a procedure instead of a table.</p>")
+            "out in the middle of the range, widens the pool and tests past its new edge, and gives sine a procedure instead of a table. "
+            '<a href="../calculator-scaling/">Scaling laws for a calculator</a> measures how error falls with parameters, steps and data.</p>')
 
 
 def tldr():

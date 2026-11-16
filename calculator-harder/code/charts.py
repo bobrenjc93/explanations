@@ -233,7 +233,7 @@ def hbar_chart(items, w=760, xmax=1.0, xticks=(0, .25, .5, .75, 1.0), label_w=21
 
 
 def xy_chart(families, points=(), w=760, h=340, xlab="", ylab="", xmin=None, xmax=None, ymin=0.0, ymax=1.0, yticks=None, xticks=None,
-             vfmt=pct, xfmt=lambda v: f"{v:.0f}", right=130, end_labels=True):
+             vfmt=pct, xfmt=lambda v: f"{v:.0f}", right=130, end_labels=True, yfmt=lambda t: f"{100*t:.0f}%"):
     """families: [{name, c, pts: [(x, y, label)]}] drawn as connected lines; points: [{name, c, x, y}] labelled singles."""
     allx = [p[0] for f in families for p in f["pts"]] + [p["x"] for p in points]
     xmin = min(allx) if xmin is None else xmin
@@ -245,7 +245,7 @@ def xy_chart(families, points=(), w=760, h=340, xlab="", ylab="", xmin=None, xma
     o = []
     for t in yticks or []:
         o.append(f'<line class="grid" x1="{L}" x2="{L+pw}" y1="{Y(t):.1f}" y2="{Y(t):.1f}"/>')
-        o.append(f'<text x="{L-6}" y="{Y(t)+4:.1f}" text-anchor="end">{100*t:.0f}%</text>')
+        o.append(f'<text x="{L-6}" y="{Y(t)+4:.1f}" text-anchor="end">{yfmt(t)}</text>')
     for t in xticks or []:
         o.append(f'<text x="{X(t):.1f}" y="{T+ph+15}" text-anchor="middle">{xfmt(t)}</text>')
     o.append(f'<line class="axis" x1="{L}" x2="{L+pw}" y1="{T+ph}" y2="{T+ph}"/>')
@@ -253,7 +253,12 @@ def xy_chart(families, points=(), w=760, h=340, xlab="", ylab="", xmin=None, xma
     ends, rows = [], []
     for f in families:
         pts = [(X(x), Y(y)) for x, y, _ in f["pts"]]
-        o.append(f'<path class="ln" d="M{" L".join(f"{x:.1f},{y:.1f}" for x, y in pts)}" stroke="var({f["c"]})"/>')
+        dash = ' stroke-dasharray="5 4"' if f.get("dash") else ""
+        if not f.get("noline"):
+            o.append(f'<path class="ln" d="M{" L".join(f"{x:.1f},{y:.1f}" for x, y in pts)}" stroke="var({f["c"]})"{dash}/>')
+        if f.get("nodots"):  # a fitted line: drawn, not hoverable
+            ends.append((pts[-1], f["name"], f["pts"][-1][1]))
+            continue
         for (x, y, lab), (cx, cy) in zip(f["pts"], pts):
             tip = {"t": f"{f['name']} · {lab}", "r": [{"c": f["c"], "n": ylab, "v": vfmt(y)}, {"n": xlab, "v": xfmt(x)}]}
             o.append(f'<circle class="hit" cx="{cx:.1f}" cy="{cy:.1f}" r="12" tabindex="0" data-tip="{esc(json.dumps(tip))}"/>')
@@ -274,7 +279,7 @@ def xy_chart(families, points=(), w=760, h=340, xlab="", ylab="", xmin=None, xma
             o.append(f'<line class="axis" x1="{pt[0]+5:.1f}" y1="{pt[1]:.1f}" x2="{pt[0]+11:.1f}" y2="{y:.1f}"/>')
         o.append(f'<text class="lab" x="{pt[0]+13:.1f}" y="{y+4:.1f}">{esc(name)}</text>')
     svg = f'<svg viewBox="0 0 {w} {h}" role="img">' + "".join(o) + "</svg>"
-    leg = legend([(f["name"], f["c"], "line") for f in families] + [(p["name"], p["c"], "box") for p in points])
+    leg = legend([(f["name"], f["c"], "dash" if f.get("dash") else "line") for f in families] + [(p["name"], p["c"], "box") for p in points])
     return leg + svg + table_view(["series", "setting", xlab, ylab], rows)
 
 
