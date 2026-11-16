@@ -32,7 +32,7 @@ for name, path in specs:
     outs = []
     for i in range(0, len(P), 2048):
         with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
-            toks = net.generate_long(P[i : i + 2048], 120).cpu().tolist()
+            toks = net.generate_long(P[i : i + 2048], 700).cpu().tolist()
         outs += [m3.decode(r[: r.index(mg.EOS)] if mg.EOS in r else r) for r in toks]
     ans = [o.split("]")[-1] for o in outs]
     ok = [a == t for a, t in zip(ans, truth)]

@@ -57,7 +57,9 @@ def head():
     return (f"<h1>{TITLE}</h1>\n"
             f'<p class="sub">Follow-up to {PREV}. That benchmark is used up: seven levels, 99.1% exact match. The ask this time was harder and '
             "harder problems, equations included, and an eval that takes longer to saturate. Same small transformer, same recipe (a supervised "
-            "thinking block before the answer), 14 levels instead of 7, and worked solutions of up to 2,300 tokens.</p>")
+            "thinking block before the answer), 14 levels instead of 7, and worked solutions of up to 2,300 tokens.</p>"
+            '<p class="note"><strong>Follow-up:</strong> <a href="../calculator-generalize/">Does the calculator generalise?</a> leaves sizes '
+            "out in the middle of the range, widens the pool and tests past its new edge, and gives sine a procedure instead of a table.</p>")
 
 
 def tldr():
@@ -280,7 +282,8 @@ def beyond():
     o.append("<p>This is the part of the benchmark that should take longest to saturate, because it is defined relative to what was trained on. "
              "Adding the stretch range to the training pool would presumably teach that range, the way the old model's failure on L8 and L9 "
              "disappeared once they were trained on; but the generator has knobs, and the set one size above the new pool is then the new stretch "
-             "set. (That last step is not run here.) A fixed test set measures whether a model has learned a distribution. A stretch set measures "
+             "set. (<a href=\"../calculator-generalize/\">The follow-up</a> runs that step: the added range is learned and the next one mostly is not.) A fixed "
+             "test set measures whether a model has learned a distribution. A stretch set measures "
              "whether it has learned the procedure, and for these models the answer is: not yet.</p>")
     return "\n".join(o)
 

@@ -1,9 +1,12 @@
 """Training pool and test set for the 14-level benchmark (the 7 calculator levels + 7 harder tiers).
 
-Usage: build_data3.py <rows per level> <out.npz> <version> [weights]
+Usage: build_data3.py <rows per level> <out.npz> <version> [weights] [regime]
   version   full    '[' worked solution ']' answer   (mathgen2 v2.3 procedures, mathgen3 for the new tiers)
             values  the same solutions without the digit-level work (one 'op=value' per operation)
             none    the answer alone
+  regime    train   the original size ranges (default)
+            wide    the original ranges plus one size up (mathgen3.REGIME = "wide": a few sizes are left out as gaps), sin/cos of
+                    arguments out to +-100 with argument reduction, solutions up to 4,096 tokens; the stretch-set problems are excluded
 
 Rows are bucketed by prompt class (fits 32 tokens or not) and target length, so shapes are static and padding small.
 The test set is the old 14,000 problems plus 2,000 per new tier, the same problems for every version; <out>.test.json
@@ -24,6 +27,12 @@ PW = [32, m3.P_MAX]  # prompt classes
 N_TEST = 2000
 EOS = bytes([mg.EOS])
 m2.configure("values6" if VERSION == "values" else "v2.3")
+REGIME = sys.argv[5] if len(sys.argv) > 5 else "train"
+EXCLUDE = set()
+if REGIME == "wide":
+    m3.REGIME, m2.OPT["reduce"], mg.SIN_RANGE = "wide", True, 100
+    WIDTHS, PW = WIDTHS + [3072, 4096], [32, 128]
+    EXCLUDE = set(json.load(open("hard/stretch.json"))["text"])
 
 
 def enc(text):
@@ -52,7 +61,7 @@ def work(args):
     P, T, nrej = [], [], 0
     while len(P) < n:
         text, p = sample(lv, rng)
-        if m3.held_out(p) if p else mg.is_test(text):
+        if (m3.held_out(p) if p else mg.is_test(text)) or text in EXCLUDE or len(text) + 2 > PW[-1]:
             continue
         try:
             t = target(text, p, rng)
@@ -72,8 +81,9 @@ def test_tier(lv):
     """2,000 held-out problems of a new tier whose full worked solution fits; identical for every version."""
     rng = random.Random(9000 + lv)
     out, seen = [], set()
-    saved = dict(m2.OPT)
+    saved, regime, sin_range = dict(m2.OPT), m3.REGIME, mg.SIN_RANGE
     m2.configure("v2.3")
+    m3.REGIME, mg.SIN_RANGE = "train", 0  # the test set is the same 2,000 problems per tier whatever the pool's regime
     while len(out) < N_TEST:
         p = m3.sample(lv, rng)
         if not m3.held_out(p) or p["text"] in seen:
@@ -84,13 +94,14 @@ def test_tier(lv):
         except mg.Reject:
             continue
         n = len(sc) + 2 + len(ans) + 1
-        if n > WIDTHS[-1]:
+        if n > m3.T_MAX:
             continue
         if lv == m3.NLEVELS - 1:
             p["kind"] += f", {sc.count(';x=')} iterations"
         p["full_len"] = n
         out.append(p)
     m2.OPT.update(saved)
+    m3.REGIME, mg.SIN_RANGE = regime, sin_range
     return out
 
 

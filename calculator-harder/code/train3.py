@@ -35,6 +35,7 @@ p.add_argument("--gen_n", type=int, default=200, help="test problems per level i
 p.add_argument("--log_every", type=int, default=250)
 p.add_argument("--accum", type=int, default=1, help="split every optimiser step into this many passes over the buckets (same batch, less memory)")
 p.add_argument("--save", type=int, default=1)
+p.add_argument("--ckpt_every", type=int, default=0, help="save a resumable checkpoint every N steps; a run restarted with the same name continues from it")
 p.add_argument("--time_steps", type=int, default=0, help="print per-bucket wall time for this many steps after the warm-up (diagnostic)")
 args = p.parse_args()
 
@@ -159,16 +160,24 @@ def within(ans):
 for q in model.parameters():
     q.grad = torch.zeros_like(q)
 g = torch.Generator(device=dev).manual_seed(args.seed)
-log = open(f"{args.out}/{args.name}.jsonl", "w")
-t0 = time.time()
+CKPT = f"{args.out}/{args.name}.ckpt.pt"
+start = 0
+if args.ckpt_every and os.path.exists(CKPT):  # an interrupted run: pick up where it stopped
+    ck = torch.load(CKPT, map_location=dev)
+    model.load_state_dict(ck["state"])
+    opt.load_state_dict(ck["opt"])
+    start = ck["step"]
+    print(f"resuming from step {start}", flush=True)
+log = open(f"{args.out}/{args.name}.jsonl", "a" if start else "w")
+t0 = time.time() - (ck["elapsed"] if start else 0.0)
 model.train()
 run_loss, n_loss = 0.0, 0
 log_loss, log_n = 0.0, 0
 lvl = lambda x, m=None: [float(x[(te_lv == l) & (m if m is not None else True)].mean()) for l in range(NL)]
-for step in range(args.steps):
+for step in range(start, args.steps):
     for grp in opt.param_groups:
         grp["lr"] = lr_at(step)
-    fresh = step < 6  # CUDA graphs are being recorded: keep the cyclic GC from freeing kernels mid-capture
+    fresh = step - start < 6  # CUDA graphs are being recorded: keep the cyclic GC from freeing kernels mid-capture
     if fresh:
         gc.collect()
         gc.disable()
@@ -216,6 +225,10 @@ for step in range(args.steps):
         log.flush()
         print(f"{step+1:6d} loss {rec['loss']:.4f}  tf-exact " + " ".join(f"{x:.2f}" for x in em) + f"  mean {np.mean(em):.3f}  {rec['t']:.0f}s", flush=True)
         run_loss, n_loss = 0.0, 0
+
+    if args.ckpt_every and (step + 1) % args.ckpt_every == 0 and step + 1 < args.steps:
+        torch.save({"state": model.state_dict(), "opt": opt.state_dict(), "step": step + 1, "elapsed": time.time() - t0}, CKPT + ".tmp")
+        os.replace(CKPT + ".tmp", CKPT)
 
 train_time = time.time() - t0
 if args.save:

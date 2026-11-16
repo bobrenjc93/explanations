@@ -62,6 +62,7 @@ OPT = {
     "split_exp": True,     # e^x = e^(whole part) * e^(first decimal)
     "chains": True,        # n! = (n-1)! * n, nPr / nCr as running products, cube roots by Newton
     "div_products": True,  # write the product in long-division steps for divisors of 3+ digits
+    "reduce": False,       # sin/cos beyond the 0.01 grid: subtract whole turns first (mathgen3's wide pool turns this on)
 }
 RUNGS = {  # cumulative versions of the scratchpad, in the order they were introduced
     "values6": dict(work=False, split_pow=False, offgrid=False, jitter=False, split_exp=False, chains=False, div_products=False),
@@ -320,8 +321,26 @@ class Tracer:
         self.steps.append(f"{head}={s(v.d)}")
         return v
 
+    def reduce(self, x):
+        """x - k*2pi for the nearest whole number of turns k. The quotient x / 2pi is taken to one decimal (the '~' step) and
+        rounded to k; 2pi is subtracted as 6.28 and 0.00318531 separately so the difference keeps its digits."""
+        Y = 628319
+        steps, q, _, r = long_div(int(abs(x.d) * 100000), Y, False)
+        d = 10 * r // Y
+        steps.append(f"{d}p{d * Y}r{10 * r - d * Y}" if OPT["div_products"] and d >= 2 else f"{d}r{10 * r - d * Y}")
+        sign = "-" if x.d < 0 else ""
+        self.steps.append(f"{s(x.d)}/6.28319:{','.join(steps)}~{sign}{q}.{d}")
+        k = V(D(q + (d >= 5)) * (-1 if x.d < 0 else 1))
+        self.steps.append(f"k={s(k.d)}")
+        a = self.add(x, self.mul(k, V(D("6.28"))), "-")
+        return V(self.add(a, self.mul(k, V(D("0.00318531"), False)), "-").d, False)
+
     def trig(self, name, x):
         """sin/cos at an argument off the 0.01 grid: nearest grid point plus the first-order correction."""
+        if OPT["reduce"] and name != "tan" and D("9.99") < abs(x.d) < D(100000):
+            v = self.trig(name, self.reduce(x))
+            self.steps.append(f"{name}({s(x.d)})={s(v.d)}")
+            return v
         x0 = x.d.quantize(D("0.01"), rounding=ROUND_HALF_UP)
         delta = x.d - x0
         f = {"sin": math.sin, "cos": math.cos, "tan": math.tan}[name]

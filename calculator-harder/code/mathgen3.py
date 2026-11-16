@@ -42,14 +42,17 @@ P_MAX = 96    # BOS + text + '='
 A_MAX = 40    # answer + EOS
 T_MAX = 2304  # '[' worked solution ']' answer EOS
 VARS = "xyz"
-# Stretch problems: every tier's size knob set beyond its training range (more digits, operations, terms, iterations).
-# They are never trained on; build_stretch.py makes a test set of them.
-STRETCH = False
+# Every tier has a size knob (digits, operations, terms, iterations). SIZE is the level the generators draw at:
+# 0 the original training range, 1 one size up (the stretch set), 2 two sizes up.
+# REGIME says what sample() draws: train | stretch | stretch2 | wide (sizes 0 and 1 mixed, minus the GAPS) | gap (only the GAPS).
+REGIME = "train"
+SIZE = 0
+GAPS = {8: (7, 12), 9: (6, 10), 12: (9, 17)}  # level index -> sizes left out of the wide pool: L9 operations, L10 terms, L13 terms
 S_P_MAX, S_T_MAX = 260, 6000
 
 
-def K(train, stretch):
-    return stretch if STRETCH else train
+def K(train, stretch, stretch2=None):
+    return (train, stretch, stretch if stretch2 is None else stretch2)[SIZE]
 
 
 
@@ -57,7 +60,7 @@ def K(train, stretch):
 def big():
     """The new tiers show integers in full up to 10^18 (the seven old levels stop at 10^10)."""
     old = (mg.INT_SHOW, mg.FRAC_LIMIT, mg.POW_LIMIT, m2.INT_LIMIT, m2.INT_SHOW)
-    e = K(18, 26)
+    e = K(18, 26, 36)
     mg.INT_SHOW, mg.FRAC_LIMIT, mg.POW_LIMIT, m2.INT_LIMIT, m2.INT_SHOW = 10**e, 10 ** (e + 4), 10**e, D(10) ** (e + 4), D(10) ** e
     try:
         yield
@@ -143,40 +146,40 @@ def sub(text, var, x):
 # ------------------------------------------------------- L8: big numbers
 def gen_big(rng):
     def add(r):
-        lo, hi = K((8, 14), (15, 20))
+        lo, hi = K((8, 14), (15, 20), (21, 26))
         n = nint(r, lo, hi)
         for _ in range(r.randint(1, 3)):
             n = B(r.choice("+-"), n, nint(r, lo, hi))
         return "add/sub", n
 
     def mul(r):
-        return "multiply", B("*", nint(r, *K((4, 8), (9, 11))), nint(r, *K((4, 8), (9, 11))))
+        return "multiply", B("*", nint(r, *K((4, 8), (9, 11), (12, 14))), nint(r, *K((4, 8), (9, 11), (12, 14))))
 
     def div(r):
-        return "divide", B("/", nint(r, *K((7, 12), (13, 16))), num(str(max(2, rint(r, *K((3, 6), (7, 8)))))))
+        return "divide", B("/", nint(r, *K((7, 12), (13, 16), (17, 20))), num(str(max(2, rint(r, *K((3, 6), (7, 8), (9, 10)))))))
 
     def divx(r):
-        b, q = max(2, rint(r, *K((3, 6), (7, 8)))), max(2, rint(r, *K((3, 7), (8, 9))))
+        b, q = max(2, rint(r, *K((3, 6), (7, 8), (9, 10)))), max(2, rint(r, *K((3, 7), (8, 9), (10, 11))))
         return "divide", B("/", num(str(b * q)), num(str(b)))
 
     def mod(r):
-        return "mod", fn("mod", nint(r, *K((7, 12), (13, 16))), num(str(max(2, rint(r, *K((3, 6), (7, 8)))))))
+        return "mod", fn("mod", nint(r, *K((7, 12), (13, 16), (17, 20))), num(str(max(2, rint(r, *K((3, 6), (7, 8), (9, 10)))))))
 
     def gcd(r):
-        g, f = max(1, rint(r, *K((1, 4), (2, 4)))), K((3, 4), (5, 6))
+        g, f = max(1, rint(r, *K((1, 4), (2, 4)))), K((3, 4), (5, 6), (7, 8))
         return "gcd/lcm", fn(r.choice(["gcd", "lcm"]), num(str(g * rint(r, *f))), num(str(g * rint(r, *f))))
 
     def power(r):
-        return "power", B("^", nint(r, *K((2, 3), (4, 4))), num(str(r.randint(*K((3, 6), (4, 6))))))
+        return "power", B("^", nint(r, *K((2, 3), (4, 4), (5, 5))), num(str(r.randint(*K((3, 6), (4, 6))))))
 
     def mixed(r):
         def tree(q, nops):
             if nops == 0:
-                return nint(q, *K((3, 6), (4, 7)))
+                return nint(q, *K((3, 6), (4, 7), (5, 8)))
             k = q.randint(0, nops - 1)
             return B(q.choices("+-*", weights=[2, 2, 3])[0], tree(q, k), tree(q, nops - 1 - k))
 
-        return "mixed", tree(r, r.randint(*K((2, 3), (4, 5))))
+        return "mixed", tree(r, r.randint(*K((2, 3), (4, 5), (6, 7))))
 
     kind, tree = pick(rng, (3, add), (4, mul), (3, div), (1, divx), (1.5, mod), (2, gcd), (1.5, power), (3, mixed))(rng)
     return {"kind": kind, "text": mg.show(tree)}
@@ -199,8 +202,8 @@ def gen_long(rng):
         k = q.randint(0, nops - 1)
         return B(q.choices("+-*/", weights=[3, 3, 3, 1.5])[0], tree(q, k), tree(q, nops - 1 - k))
 
-    n = rng.randint(*K((4, 9), (10, 14)))
-    return {"kind": f"{n} operations", "text": mg.show(tree(rng, n))}
+    n = rng.randint(*K((4, 9), (10, 14), (15, 19)))
+    return {"kind": f"{n} operations", "size": n, "text": mg.show(tree(rng, n))}
 
 
 def truth_expr(p):
@@ -233,11 +236,12 @@ def gen_linear(rng):
         a = D(1) if rng.random() < 0.6 else D(rng.randint(2, 9)) * rng.choice([1, 1, -1])
         return ("p", m, a, _cf(rng, hard))
 
-    L, R = [term() for _ in range(rng.randint(*K((1, 4), (5, 7))))], [term() for _ in range(rng.randint(*K((1, 3), (4, 6))))]
+    L = [term() for _ in range(rng.randint(*K((1, 4), (5, 7), (8, 10))))]
+    R = [term() for _ in range(rng.randint(*K((1, 3), (4, 6), (7, 9))))]
     if all(t[0] == "c" for t in L + R):
         raise Reject
     n = len(L) + len(R) + sum(t[0] == "p" for t in L + R)
-    return {"kind": f"{n} terms", "L": L, "R": R, "text": "solve(" + terms_text(L) + "=" + terms_text(R) + ")"}
+    return {"kind": f"{n} terms", "size": len(L) + len(R), "L": L, "R": R, "text": "solve(" + terms_text(L) + "=" + terms_text(R) + ")"}
 
 
 def _reduce(side):
@@ -309,8 +313,9 @@ def _dec(f):
 
 
 def gen_quad(rng):
-    if STRETCH:  # coefficients several times larger than any in training
-        co = [F(rng.randint(10, 30)), F(rng.randint(31, 300) * rng.choice([1, -1])), F(rng.randint(41, 400) * rng.choice([1, -1]))]
+    if SIZE:  # coefficients several times larger than any in training (two sizes up: larger again)
+        a_, b_, c_ = (((10, 30), (31, 300), (41, 400)), ((31, 99), (301, 3000), (401, 4000)))[SIZE - 1]
+        co = [F(rng.randint(*a_)), F(rng.randint(*b_) * rng.choice([1, -1])), F(rng.randint(*c_) * rng.choice([1, -1]))]
     elif rng.random() < 0.45:  # built from two rational roots
         d1, d2 = rng.choice([1, 1, 1, 2, 4, 5]), rng.choice([1, 1, 1, 2])
         r1, r2 = F(rng.randint(-12 * d1, 12 * d1), d1), F(rng.randint(-12 * d2, 12 * d2), d2)
@@ -386,8 +391,9 @@ def trace_quad(P, tr):
 
 # ---------------------------------------------------- L12: linear systems
 def gen_system(rng):
-    n = 3 if STRETCH or rng.random() >= 0.5 else 2
-    hi = 30 if STRETCH or (n == 2 and rng.random() < 0.35) else 9  # stretch: 3x3 with two-digit coefficients
+    n = 3 if SIZE or rng.random() >= 0.5 else 2
+    # one size up: 3x3 with two-digit coefficients (up to 30); two sizes up: up to 99
+    hi = (30, 99)[SIZE - 1] if SIZE else (30 if n == 2 and rng.random() < 0.35 else 9)
     A = [[rng.randint(-hi, hi) for _ in range(n)] for _ in range(n)]
     if any(all(v == 0 for v in row) for row in A):
         raise Reject
@@ -397,7 +403,7 @@ def gen_system(rng):
     else:
         b = [rng.randint(-30, 30) for _ in range(n)]
     eqs = [lin_text([(D(a), v) for a, v in zip(row, VARS)]) + "=" + str(bi) for row, bi in zip(A, b)]
-    return {"kind": f"{n}x{n}" + (" two-digit" if hi == 30 else ""), "A": A, "b": b, "text": "solve(" + ",".join(eqs) + ")"}
+    return {"kind": f"{n}x{n}" + (" two-digit" if hi >= 30 else ""), "A": A, "b": b, "text": "solve(" + ",".join(eqs) + ")"}
 
 
 def _det(M):
@@ -454,15 +460,15 @@ def _sum_term(r):
 def gen_sum(rng):
     term, lo_min, hi_max = _sum_term(rng)
     lo = lo_min + rng.choice([0, 1, 1, 1, 2, 3, 4, 5, 6])
-    if STRETCH:  # 13 to 24 terms (training: 3 to 12); the power and factorial terms cannot go that far and are left out
+    if SIZE:  # 13 to 24 terms (training: 3 to 12), then 25 to 36; the power and factorial terms cannot go that far and are left out
         if hi_max < 12:
             raise Reject
-        hi = lo + rng.randint(13, 24) - 1
+        hi = lo + rng.randint(*K(None, (13, 24), (25, 36))) - 1
     else:
         hi = min(lo + rng.randint(3, 12) - 1, hi_max)
     if hi - lo < 2:
         raise Reject
-    return {"kind": f"{hi - lo + 1} terms", "term": term, "lo": lo, "hi": hi, "text": f"sum({term},k,{lo},{hi})"}
+    return {"kind": f"{hi - lo + 1} terms", "size": hi - lo + 1, "term": term, "lo": lo, "hi": hi, "text": f"sum({term},k,{lo},{hi})"}
 
 
 def truth_sum(P):
@@ -564,25 +570,41 @@ TRACE = [trace_expr, trace_expr, trace_linear, trace_quad, trace_system, trace_s
 
 
 def sample(level, rng):
-    """A well-formed problem of one of the new tiers (level 7..13)."""
+    """A well-formed problem of one of the new tiers (level 7..13), at the sizes REGIME asks for."""
+    global SIZE
     while True:
+        if REGIME in ("wide", "gap"):  # the original range and one size up, mixed (Newton keeps its original range)
+            size = 0 if level == NLEVELS - 1 or rng.random() < 0.5 else 1
+        else:
+            size = {"train": 0, "stretch": 1, "stretch2": 2}[REGIME]
+        SIZE = size
         try:
             with big():
                 p = GENS[level - OLD](rng)
                 p["truth"] = TRUTH[level - OLD](p)
+            if len(p["text"]) + 2 > K(P_MAX, S_P_MAX, 420) or len(p["truth"]) + 1 > A_MAX:
+                continue
         except (Reject, ZeroDivisionError, OverflowError, ValueError):
             continue
-        if len(p["text"]) + 2 > K(P_MAX, S_P_MAX) or len(p["truth"]) + 1 > A_MAX:
+        finally:
+            SIZE = 0
+        gap = p.get("size") in GAPS.get(level, ())
+        if (REGIME == "wide" and gap) or (REGIME == "gap" and not gap):
             continue
-        p["level"] = level
+        p["level"], p["size_level"] = level, size
         return p
 
 
 def solve(p, rng=None):
     """-> (worked solution without brackets, displayed answer derived from it). rng jitters Newton square-root estimates."""
+    global SIZE
     tr = Tracer(rng)
-    with big():
-        ans = TRACE[p["level"] - OLD](p, tr)
+    SIZE = p.get("size_level", 0)
+    try:
+        with big():
+            ans = TRACE[p["level"] - OLD](p, tr)
+    finally:
+        SIZE = 0
     return ";".join(tr.steps), ans
 
 

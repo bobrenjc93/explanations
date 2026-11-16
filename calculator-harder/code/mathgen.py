@@ -33,6 +33,8 @@ INT_SHOW = 10**10   # integers are displayed in full below this
 FRAC_LIMIT = 10**13  # exact rationals are abandoned beyond this
 POW_LIMIT = 10**12
 
+SIN_RANGE = 0  # > 0: half of the direct sin/cos arguments are drawn from 10 < |x| <= SIN_RANGE (the wide pool; off by default)
+
 P_MAX = 30  # BOS + expression + '=' (left padded)
 A_MAX = 12  # answer + EOS (right padded)
 C_MAX = 48  # '[' scratch ']' answer EOS (right padded)
@@ -453,6 +455,8 @@ def gen_L5(rng):
 
 def _sci_arg(rng, name):
     """A plain numeric argument in the function's interesting range."""
+    if SIN_RANGE and name in ("sin", "cos") and rng.random() < 0.5:
+        return num(f"{rng.choice([1, -1]) * rng.randint(1000, SIN_RANGE * 100) / 100:.2f}".rstrip("0").rstrip("."))
     if name in ("sin", "cos", "tan"):
         return num(f"{rng.randint(-999, 999) / 100:.2f}".rstrip("0").rstrip("."))
     if name in ("asin", "acos"):
