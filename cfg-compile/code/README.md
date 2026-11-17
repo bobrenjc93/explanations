@@ -1,4 +1,4 @@
-# torch.cfg_compile: the report
+# torch.rewrite: the report
 
 Code behind https://bobrenjc93.github.io/explanations/cfg-compile/ . The compiler itself is the stack of draft PRs
 pytorch/pytorch#204373 (bottom) to pytorch/pytorch#204763 (top); nothing of it is in this folder.
@@ -11,15 +11,19 @@ pytorch/pytorch#204373 (bottom) to pytorch/pytorch#204763 (top); nothing of it i
 
 ## Results (`../results`)
 
-One JSON line per (model, test, compiler), as written by `benchmarks/cfg_compile/torchbench.py` of the stack:
+One JSON line per (model, test, compiler), as written by `benchmarks/rewrite/torchbench.py` of the stack
+(`benchmarks/cfg_compile/torchbench.py` before the sixth version; the compiler's mode is still called `cfg` in the rows):
 `call_s` is the median time of a call in the steady state, `compile_s` what the compiler reports for itself,
 `warmup_s` the cost of the calls before the timed ones, `difference` the worst relative difference from eager's
 outputs (losses for training), `graphs` the number of graphs, `paired_*` the two compilers timed in turns inside
-the `cfg_compile` process, `peak_rss_mb` the most memory the process held.
+the `cfg_compile` process, `peak_rss_mb` the most memory the process held, `peak_cuda_mb` (GPU runs) the most the process had
+allocated on the GPU (`torch.cuda.max_memory_allocated`).
 
 | file | what it is |
 |---|---|
-| `final_r22.jsonl` | the final run (v5 on the page): the top of the stack, nine workers for inference and five for training under the memory guard; inference measured again in all three modes, so that every row has its peak memory, training rows of eager and `torch.compile` taken from the run of v4 |
+| `gpu_r23.jsonl` | v6 on one H100: inference (59 models) and training (47), each (model, compiler) in a process of its own, one at a time; the rows of hf_Longformer and hf_Reformer are from a rerun on the build with the iterator fix |
+| `gpu_first.jsonl` | the first GPU run, on the build of v5, 39 models of inference before it was stopped; what the GPU section's "before" is |
+| `final_r22.jsonl` | the CPU run (v5 on the page; v6 was not measured again on the CPU with the machine to itself, so the CPU sections keep these rows): the top of the stack, nine workers for inference and five for training under the memory guard; inference measured again in all three modes, so that every row has its peak memory, training rows of eager and `torch.compile` taken from the run of v4 |
 | `memory_r22.log` | memory in use in the container during that run, every 30 s |
 | `final_r21f.jsonl` | v4: memory kept per function, weights built in, one-row products. Thirteen of its training rows for `cfg_compile` have no `process_peak_rss_mb`: their `peak_rss_mb` includes `torch.compile` in the same process and is not comparable |
 | `memory_r21f.log` | memory in use in the container during that run, every 30 s |
@@ -32,5 +36,5 @@ The numbers on the page that are not in these files (the single-model comparison
 benchmarks, the CPython conformance run) are quoted from the descriptions of the PRs and from the report in the
 description of the top PR.
 
-`cpython_r22.json` has the outcome of every test of the CPython conformance run on the top of the stack (per
-module: the plain interpreter's run and the compiled one).
+`cpython_r23.json` has the outcome of every test of the CPython conformance run on the top of the stack (per
+module: the plain interpreter's run and the compiled one), with the frame hook on; `cpython_r22.json` is the run of v5.

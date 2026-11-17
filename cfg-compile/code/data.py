@@ -1,4 +1,4 @@
-"""Loads the TorchBench results of the cfg_compile stack and derives what the page shows."""
+"""Loads the TorchBench results of the torch.rewrite stack and derives what the page shows."""
 import collections
 import json
 import math
@@ -74,7 +74,7 @@ def summary(models):
 
 
 def held(models):
-    """Peak memory of the cfg_compile process before torch.compile joins it, over torch.compile's process."""
+    """Peak memory of the torch.rewrite process before torch.compile joins it, over torch.compile's process."""
     out = []
     for n, d in models.items():
         if ok3(d) and "process_peak_rss_mb" in d["cfg"] and d["compile"].get("peak_rss_mb") and d["eager"].get("peak_rss_mb"):
@@ -105,3 +105,22 @@ VERSIONS = [
     ("v4", "Nov 16", V4),
     ("v5", "Nov 17", FINAL),
 ]
+
+
+def gpu(path):
+    """A GPU run: per test, the models where eager, torch.compile and torch.rewrite all ran."""
+    by = {}
+    for line in open(os.path.join(RESULTS, path)):
+        r = json.loads(line)
+        by.setdefault((r["test"], r["name"]), {})[r["mode"]] = r
+    out = {"eval": [], "train": []}
+    for (test, name), d in sorted(by.items()):
+        if all(m in d and d[m].get("ok") for m in ("eager", "compile", "cfg")):
+            e, c, g = (d[m]["call_s"] * 1e3 for m in ("eager", "compile", "cfg"))
+            held = [d[m].get("peak_cuda_mb") or 0 for m in ("eager", "compile", "cfg")]
+            out[test].append({"name": name, "eager": e, "compile": c, "rewrite": g, "ratio": g / c, "held": held})
+    return out
+
+
+GPU = gpu("gpu_r23.jsonl")
+GPU_FIRST = gpu("gpu_first.jsonl")

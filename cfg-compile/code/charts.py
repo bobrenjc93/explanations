@@ -310,7 +310,7 @@ def seq(*parts):
 
 
 # ---------------------------------------------------------------------------------------------
-# Additions for the cfg_compile report: ratios against a baseline, plain value bars, stat tiles.
+# Additions for the torch.rewrite report: ratios against a baseline, plain value bars, stat tiles.
 # ---------------------------------------------------------------------------------------------
 
 EXTRA_CSS = """
@@ -345,7 +345,7 @@ def tiles(items):
 
 
 def ratio_bars(items, lo, hi, ticks, w=760, label_w=214, bar=10, gap=7, band=0.03, vfmt=lambda v: f"{v:.2f}",
-               names=("cfg_compile faster", "within 3%", "torch.compile faster"), tv_header=None, tv_rows=None, axis_label=""):
+               names=("torch.rewrite faster", "within 3%", "torch.compile faster"), tv_header=None, tv_rows=None, axis_label=""):
     """Horizontal bars from a baseline at 1.0 on a log scale: one row per item, the value at the tip.
     Left of the baseline in the first pole's hue, right in the second's, within the band in the neutral gray.
     items: [{name, v, tip: [(label, value)]}]"""
