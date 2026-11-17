@@ -122,7 +122,7 @@ call takes under a few milliseconds, on plain Python in the VM, and in everythin
 step, generators, sizes that only data decides.</p>
 <p><strong>On a GPU</strong> (one H100, new in the sixth version) it takes 1.00 of the time of
 <code>torch.compile</code> for inference and 0.97 for training: the kernels are the same there, memory is not
-what is slow, and the margin that is left comes from making fewer graphs where a model loops on data.</p>
+what is slow, and the margin that is left comes from making fewer graphs where a model loops on data. (These were measured on a build without cuDNN: see the correction in section 9.)</p>
 <p>The sixth version also made what is done to a function one list of passes, to which a user adds passes of their own, in Python or
 in Rust; rewrites the functions that C code calls (constructors, properties, operators, callbacks), through the frame hook Dynamo uses;
 and runs on CPython 3.14 as well as 3.12.</p>
@@ -379,6 +379,7 @@ caches and specialized instructions, three to four times slower, and the reason 
 hands such code back. On CUDA the tensor workloads ran 1.00x to 1.30x eager when they were last measured, early in the work; nothing
 since has been measured on a GPU.</p>
 <h2>9. On a GPU</h2>
+<p class="note"><strong>Correction, Nov 17.</strong> The build that the GPU numbers of this section were measured on was configured without cuDNN, so convolutions ran PyTorch's own kernels, 20 to 30 times slower than cuDNN's. Eager, <code>torch.compile</code> and <code>torch.rewrite</code> ran on that same build, so the ratios compare like with like, but for convolutional models they are not of the workload people run. The suites are being run again on a build with cuDNN, with the runner and the settings of the PyTorch perf dashboard; this section will be replaced by those numbers.</p>
 <p>Everything above is a CPU. The sixth version was also run on one NVIDIA H100 (CUDA 12.8, Triton 3.8.0), with the same harness: a
 process per model and compiler, one model on the GPU at a time, four CPU threads, the time of a call once the compiler has stopped compiling
 and measuring. <code>torch.compile</code> runs with its defaults, <code>torch.rewrite</code> with the Inductor pass in front of the
