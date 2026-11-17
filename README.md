@@ -16,7 +16,7 @@ the favicon `<link>` tags using `../`), commit it, then run `python3 tools/build
 ## Index
 
 - Nov 16, 2026: [Scaling laws for a calculator: parameters, data, and where it stops](https://bobrenjc93.github.io/explanations/calculator-scaling/)
-- Nov 16, 2026: [torch.cfg_compile: a control-flow-graph compiler for PyTorch, measured against torch.compile](https://bobrenjc93.github.io/explanations/cfg-compile/)
+- Nov 16, 2026: [torch.rewrite: a function as a control-flow graph and a list of rewrites, measured against torch.compile](https://bobrenjc93.github.io/explanations/cfg-compile/)
 - Nov 16, 2026: [Does the calculator generalise? Gaps, a wider pool, and a procedure for sine](https://bobrenjc93.github.io/explanations/calculator-generalize/)
 - Nov 15, 2026: [A calculator benchmark that takes longer to saturate](https://bobrenjc93.github.io/explanations/calculator-harder/)
 - Nov 14, 2026: [A calculator LLM at 99%: the scratchpad mattered more than the weights](https://bobrenjc93.github.io/explanations/calculator-99/)
