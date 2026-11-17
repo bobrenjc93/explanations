@@ -60,9 +60,8 @@ def tldr():
                  f"compute to the power -{cg:.2f}, and no run misses that line by more than {100 * (miss - 1):.0f}%.</li>")
     ds = sorted(S.runs(S.DATA), key=lambda r: r["unique"])
     if len(ds) >= 3:
-        b.append(f"<li><strong>Distinct data.</strong> With the same compute, a pool of {nf(ds[0]['unique'])} problems gives {pct(ds[0]['acc'])}, "
-                 f"{nf(ds[1]['unique'])} gives {pct(ds[1]['acc'])} and {nf(ds[-1]['unique'])} gives {pct(ds[-1]['acc'])}. More distinct problems help "
-                 "until each is seen only a few times; past that the run is limited by compute, not data.</li>")
+        b.append(f"<li><strong>Distinct data.</strong> With the same compute, " + ", ".join(f"{nf(r['unique'])} distinct problems give {pct(r['acc'])}" for r in ds)
+                 + ". More distinct problems help until each is seen only a few times; past that the run is limited by compute, not data.</li>")
     if len(rs) >= 4:
         b.append(f"<li><strong>The asymptote in range is the scratchpad's, not the model's.</strong> A perfect solver following the worked solutions "
                  f"scores {pct(S.ceiling())}. The curves bend toward that floor and nothing else stops them.</li>")
@@ -141,9 +140,15 @@ def size():
         ls = [r for r in rs if r["loss"]]
         (la, lal) = S.fit_power([r["N"] for r in ls], [r["loss"] for r in ls])
         o.append(fl)
-        o.append(f"<p>Held-out loss tells the same story on the axis scaling laws are usually stated on: {ls[0]['loss']:.3f} nats per token at "
-                 f"{nf(ls[0]['N'])} down to {ls[-1]['loss']:.4f} at {nf(ls[-1]['N'])}, an exponent of {lal:.2f} over the sweep, flattening at the top "
-                 "where the unpredictable root estimates start to dominate what is left.</p>")
+        clean = (0, 1, 2, 3, 7, 9, 11, 13)
+        cl = lambda r: float(np.mean([r["loss_level"][l] for l in clean]))
+        fit_rs = [r for r in ls if r["acc"] >= S.FIT_MIN]
+        (ca, cal) = S.fit_power([r["N"] for r in fit_rs], [cl(r) for r in fit_rs])
+        o.append(f"<p>Held-out loss tells the same story on the axis scaling laws are usually stated on. Over all levels it goes from "
+                 f"{ls[0]['loss']:.3f} nats per token at {nf(ls[0]['N'])} to {ls[-1]['loss']:.4f} at {nf(ls[-1]['N'])} and flattens at the top, where "
+                 "the root estimates that cannot be predicted are most of what is left. On the levels that have no such tokens it is a straight "
+                 f"line: {cl(fit_rs[0]):.4f} at {nf(fit_rs[0]['N'])} down to {cl(fit_rs[-1]):.5f} at {nf(fit_rs[-1]['N'])}, exponent {cal:.2f}, with no "
+                 "sign of a floor.</p>")
     return "\n".join(o)
 
 
@@ -185,13 +190,24 @@ def data():
              "needed, the 3.2M model is trained with the same compute on smaller pools, revisiting the same problems.</p>")
     o.append(S.fig_data())
     o.append(S.data_table())
-    small = ds[0]
-    o.append(f"<p>With {nf(small['unique'])} distinct problems, each seen {small['seen'] / small['unique']:.0f} times, the model "
-             + (f"reproduces {pct(small['train_tf'], 0)} of its training solutions token for token and " if small["train_tf"] is not None else "")
-             + f"answers {pct(small['acc'])} of the test problems: it has memorised a pool it cannot generalise from. "
-             + " ".join(f"At {nf(r['unique'])} it is at {pct(r['acc'])}." for r in ds[1:])
-             + " The curve flattens once each problem is seen only a handful of times. Past that point distinct data is not what limits the "
-             "run; steps and parameters are.</p>")
+    small, full = ds[0], ds[-1]
+    o.append(f"<p>With {nf(small['unique'])} distinct problems (4,000 per level), each seen {small['seen'] / small['unique']:.0f} times, the model "
+             + (f"reproduces {pct(small['train_tf'], 0)} of its training solutions token for token (training loss {small['train_loss']:.4f}) and its "
+                f"held-out loss is {small['loss'] / max(small['train_loss'], 1e-6):,.0f} times higher. " if small["train_tf"] is not None else "")
+             + f"It has memorised its pool, and it still answers {pct(small['acc'])} of problems it has never seen: a few thousand worked examples "
+             "per level already teach most of the easy levels. "
+             + " ".join(f"At {nf(r['unique'])} distinct problems it is at {pct(r['acc'])}." for r in ds[1:-1])
+             + f" The full pool, where a 10,000-step run meets about {nf(full['unique'])} distinct problems and almost never sees one twice, gives "
+             f"{pct(full['acc'])}.</p>")
+    if len(ds) >= 3:
+        k = next((i for i in range(1, len(ds)) if (1 - ds[i - 1]["acc"]) / max(1 - ds[i]["acc"], 1e-4) < 1.5), len(ds) - 1)
+        al = math.log((1 - ds[0]["acc"]) / (1 - ds[1]["acc"])) / math.log(ds[1]["unique"] / ds[0]["unique"])
+        o.append(f"<p>So data has two regimes. While problems are being revisited many times, each tenfold increase in distinct problems cuts the "
+                 f"error by a factor of {10 ** al:.1f} (exponent {al:.2f} between the two smallest pools). Once each problem is seen only a handful of "
+                 f"times, around {nf(ds[k]['unique'])} here, the curve flattens: the run is limited by its compute, and more distinct problems buy "
+                 "little until there are more steps or more parameters to use them. For a synthetic task this is the comfortable regime to be in, "
+                 "since new problems cost nothing; the measurement says how much a fixed, collected dataset of this kind would have to hold "
+                 "before it stopped being the bottleneck.</p>")
     return "\n".join(o)
 
 
@@ -244,6 +260,13 @@ def stretch():
               "no better out of range. " if flat else "") +
              f"In-range error fell by a factor of {(1 - lo['acc']) / (1 - hi['acc']):.0f} over the sweep; out of range, error went from "
              f"{pct(1 - lo['stretch_mean'])} to {pct(1 - hi['stretch_mean'])}.</p>")
+    allr = [r for r in S.runs(S.ALL) if r["frac"] >= 1 and r["stretch_mean"] is not None and r["acc"] >= S.FIT_MIN]
+    below = [r for r in allr if r["pflop"] < 0.8 * max(x["pflop"] for x in allr)]
+    if len(below) >= 5:
+        sl = float(np.polyfit([math.log2(r["pflop"]) for r in below], [r["stretch_mean"] for r in below], 1)[0])
+        o.append(f"<p>Against compute the picture is the same as in range, with a different ending: whatever the mix of size and length, the "
+                 f"runs fall on one curve, which climbs about {100 * sl:.0f} points for every doubling of compute up to "
+                 f"{max(r['pflop'] for r in below):.0f} PFLOP and not at all for the doubling after that.</p>")
     full = G.jload("runs/scale/S_n19.stretch.json")
     full11 = G.jload("runs/hard/H_full_11m.stretch.json")
     if full and full11 and flat:
