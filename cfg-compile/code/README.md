@@ -19,7 +19,9 @@ the `cfg_compile` process, `peak_rss_mb` the most memory the process held.
 
 | file | what it is |
 |---|---|
-| `final_r21f.jsonl` | the final run (v4 on the page): the top of the stack, nine workers for inference and five for training under the memory guard |
+| `final_r22.jsonl` | the final run (v5 on the page): the top of the stack, nine workers for inference and five for training under the memory guard; inference measured again in all three modes, so that every row has its peak memory, training rows of eager and `torch.compile` taken from the run of v4 |
+| `memory_r22.log` | memory in use in the container during that run, every 30 s |
+| `final_r21f.jsonl` | v4: memory kept per function, weights built in, one-row products. Thirteen of its training rows for `cfg_compile` have no `process_peak_rss_mb`: their `peak_rss_mb` includes `torch.compile` in the same process and is not comparable |
 | `memory_r21f.log` | memory in use in the container during that run, every 30 s |
 | `final_r21a.jsonl` | v4 before the weights were built in (memory and one-row products only), inference and the first training models |
 | `final_r20.jsonl` | v3: sizes left open, effects replayed |
@@ -29,3 +31,6 @@ the `cfg_compile` process, `peak_rss_mb` the most memory the process held.
 The numbers on the page that are not in these files (the single-model comparisons of section 4, the micro
 benchmarks, the CPython conformance run) are quoted from the descriptions of the PRs and from the report in the
 description of the top PR.
+
+`cpython_r22.json` has the outcome of every test of the CPython conformance run on the top of the stack (per
+module: the plain interpreter's run and the compiled one).

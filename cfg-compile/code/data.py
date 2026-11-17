@@ -77,7 +77,7 @@ def held(models):
     """Peak memory of the cfg_compile process before torch.compile joins it, over torch.compile's process."""
     out = []
     for n, d in models.items():
-        if ok3(d) and "process_peak_rss_mb" in d["cfg"] and "peak_rss_mb" in d["compile"]:
+        if ok3(d) and "process_peak_rss_mb" in d["cfg"] and d["compile"].get("peak_rss_mb") and d["eager"].get("peak_rss_mb"):
             out.append((d["cfg"]["peak_rss_mb"] / d["compile"]["peak_rss_mb"], n, d["cfg"]["peak_rss_mb"] / 1024, d["compile"]["peak_rss_mb"] / 1024,
                         d["eager"].get("peak_rss_mb", 0) / 1024))
     return sorted(out)
@@ -96,10 +96,12 @@ def ms(seconds):
     return f"{v:.2f} ms"
 
 
-FINAL = load("final_r21f.jsonl")
+FINAL = load("final_r22.jsonl")
+V4 = load("final_r21f.jsonl")
 VERSIONS = [
     ("v1", "Nov 14", load("final_r18.jsonl")),
     ("v2", "Nov 14", load("final_r19.jsonl", "rerun_r19.jsonl", "rerun2_r19.jsonl")),
     ("v3", "Nov 15", load("final_r20.jsonl")),
-    ("v4", "Nov 16", FINAL),
+    ("v4", "Nov 16", V4),
+    ("v5", "Nov 17", FINAL),
 ]

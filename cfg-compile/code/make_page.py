@@ -43,7 +43,7 @@ def fig_path():
             {"name": "torch.cfg_compile", "short": "cfg_compile", "c": "--s1", "y": [s["speed"]["cfg"] for s in ss]},
             {"name": "torch.compile", "short": "torch.compile", "c": "--s2", "y": [s["speed"]["compile"] for s in ss]},
         ]
-        body = C.line_chart(series, list(range(4)), xlabels=[v for v, _, _ in D.VERSIONS], w=400, h=250, ymin=1.0, ymax=2.0,
+        body = C.line_chart(series, list(range(len(D.VERSIONS))), xlabels=[v for v, _, _ in D.VERSIONS], w=400, h=250, ymin=1.0, ymax=2.0,
                             yticks=(1.0, 1.25, 1.5, 1.75, 2.0), right=128, yfmt=lambda v: f"{v:.2f}x", vfmt=x, tv_header="version",
                             xlab="")
         n = len(ss[-1]["names"])
@@ -83,15 +83,17 @@ def fig_models(test):
     return C.figure(f"{'Inference' if test == 'eval' else 'Training'}, per model", cap, body)
 
 
-def fig_memory():
-    h = D.held(TR)
+def fig_memory(test="train"):
+    h = D.held(TR if test == "train" else EV)
     items = [{"name": n, "v": r, "tip": [("cfg_compile", f"{a:.1f} GB"), ("torch.compile", f"{b:.1f} GB"), ("eager", f"{e:.1f} GB")]} for r, n, a, b, e in h]
     rows = [[n, f"{e:.1f}", f"{b:.1f}", f"{a:.1f}", f"{r:.2f}"] for r, n, a, b, e in h]
-    body = C.ratio_bars(items, 0.7, 5.0, (0.8, 1.0, 1.5, 2.0, 3.0, 4.0), band=0.05, names=("cfg_compile holds less", "within 5%", "cfg_compile holds more"),
+    top = max(2.0, max(r for r, *_ in h) * 1.05)
+    body = C.ratio_bars(items, 0.7, top, (0.8, 1.0, 1.25, 1.5, 2.0), band=0.05, names=("cfg_compile holds less", "within 5%", "cfg_compile holds more"),
                         tv_header=["model", "eager GB", "torch.compile GB", "cfg_compile GB", "cfg_compile over torch.compile"], tv_rows=rows)
-    cap = (f"Peak resident memory of the training process under <code>torch.cfg_compile</code> over that under <code>torch.compile</code>, "
-           f"for the {len(h)} models where it was recorded before the two share a process; logarithmic scale. Geometric mean {D.geo(r for r, *_ in h):.2f}.")
-    return C.figure("What the processes hold while training", cap, body), h
+    what = "the training process" if test == "train" else "the inference process"
+    cap = (f"Peak resident memory of {what} under <code>torch.cfg_compile</code>, before <code>torch.compile</code> joins it for the calls in turns, over that "
+           f"of the process of <code>torch.compile</code>; {len(h)} models, logarithmic scale. Geometric mean {D.geo(r for r, *_ in h):.2f}.")
+    return C.figure("What the processes hold while training" if test == "train" else "What the processes hold in inference", cap, body), h
 
 
 def fig_micro():
@@ -128,7 +130,8 @@ GROUPS = [
     ("A graph compiler behind the VM", 7, "3,561", "<code>backend=\"inductor\"</code>: regions of a block traced to one ATen graph, compiled forward and backward."),
     ("Regions across basic blocks, and measuring them", 8, "2,041", "A region follows the path its trace takes through loops and branches; the benchmark harness."),
     ("Sizes left open, and state a region changes", 11, "2,367", "Sizes and integers that vary become inputs of one graph under conditions checked in Rust; effects on lists, dicts, objects, module tensors."),
-    ("Memory, weights and one-row products", 14, "1,651", "The last round, described below, with two leak fixes and three fixes to the benchmark."),
+    ("Memory, weights and one-row products", 14, "1,651", "The fourth version, described below, with two leak fixes and three fixes to the benchmark."),
+    ("The variables of the frame, and memory again", 8, "1,151", "The fifth version: frames that have their variables, <code>eval</code> and <code>exec</code> compiled, trace functions, and what the processes hold."),
     ("Tests, benchmarks and tools", 4, "510", "The micro benchmarks and the runner for CPython's own test suite."),
 ]
 
@@ -148,14 +151,25 @@ def groups_table():
 
 TITLE = "torch.cfg_compile: a control-flow-graph compiler for PyTorch, measured against torch.compile"
 SUB = ("A prototype that compiles the bytecode of a Python function to one control-flow graph, runs it in a Rust VM and hands the tensor work "
-       "to Inductor: what was built over 86 draft PRs, how it compares with torch.compile on TorchBench in accuracy, speed, compile time and "
-       "memory, where it is ahead, where it is behind, and what to do next. Nov 11 to Nov 16, 2026.")
+       "to Inductor: what was built over 94 draft PRs, how it compares with torch.compile on TorchBench in accuracy, speed, compile time and "
+       "memory, where it is ahead, where it is behind, and what to do next. Nov 11 to Nov 17, 2026.")
 
 
 def body():
-    mem_fig, h = fig_memory()
-    held_geo = D.geo(r for r, *_ in h)
-    worst = h[::-1][:4]
+    mem_fig, h = fig_memory("train")
+    mem_fig_eval, he = fig_memory("eval")
+    held_geo, held_geo_eval = D.geo(r for r, *_ in h), D.geo(r for r, *_ in he)
+    worst, worst_eval = h[::-1][:4], he[::-1][:3]
+    h4 = D.held(D.V4["train"])
+    E4, T4 = D.summary(D.V4["eval"]), D.summary(D.V4["train"])
+
+    def gb(v):
+        return f"{v:.1f} GB" if v >= 2 else f"{v * 1024:.0f} MB"
+
+    # Against the last version, for the models whose row was measured the same way there.
+    before = {n: d["cfg"]["peak_rss_mb"] for n, d in D.V4["train"].items() if d.get("cfg", {}).get("ok") and d["cfg"].get("process_peak_rss_mb") is not None}
+    change = sorted((a * 1024 / before[n], n) for r, n, a, b, e in h if n in before)
+    fewer, more = [c for c in change if c[0] < 0.97], [c for c in change if c[0] > 1.03][::-1]
     o = []
     A = o.append
     A(f"<h1>{TITLE}</h1>")
@@ -165,19 +179,23 @@ def body():
 <p><strong>TL;DR.</strong> <code>torch.cfg_compile</code> is a prototype of a different front end for PyTorch's compiler. It turns the
 bytecode of a function into one control-flow graph in SSA form, runs that graph in a VM written in Rust, traces on real tensors, and hands the
 tensor work of each path through the graph to AOTAutograd and Inductor, the compiler <code>torch.compile</code> uses behind Dynamo. It exists as
-a stack of 86 draft pull requests against pytorch/pytorch, about 27,000 lines.</p>
+a stack of 94 draft pull requests against pytorch/pytorch, about 28,000 lines.</p>
 <p>On the TorchBench models that run on this CPU box, it takes <strong>{E['alone_geo']:.2f} of the time of <code>torch.compile</code> for
 inference</strong> ({len(E['names'])} models) and <strong>{T['alone_geo']:.2f} for training</strong> ({len(T['names'])} models), geometric
 means. That is {x(E['speed']['cfg'])} and {x(T['speed']['cfg'])} eager, where <code>torch.compile</code> is {x(E['speed']['compile'])} and
 {x(T['speed']['compile'])}. Its outputs agree with eager's as closely as <code>torch.compile</code>'s do, and it compiles in less time.</p>
-<p>Three things produce the margin, all of them new in the last round and none of them in a kernel: the compiled function keeps the memory of
+<p>Three things produce the margin, none of them in a kernel: the compiled function keeps the memory of
 a call for the next one, the weights of a model are built into the graphs of inference behind a check on every call, and matrix products
 with one row are rewritten so that they use every core. <strong>It is a margin over <code>torch.compile</code> with its defaults.</strong>
 Given an allocator that keeps memory and its own <code>freezing</code> switch, <code>torch.compile</code> is level on most models, because
 the kernels are the same.</p>
-<p>It is behind on memory in training for a few models (the worst holds 18 GB where <code>torch.compile</code> holds 4 GB), on models whose
+<p>It holds more memory: {held_geo:.2f} times what the process of <code>torch.compile</code> holds at its peak in training and
+{held_geo_eval:.2f} times in inference (geometric means; the last version had single models at four times). It is behind on models whose
 call takes under a few milliseconds, on plain Python in the VM, and in everything that was not built or not measured: CUDA, the optimizer
 step, generators, sizes that only data decides.</p>
+<p>Since the last version of this page a compiled function also behaves more like an interpreted one: its frame has its variables, so
+tracebacks, debuggers, <code>eval</code> and <code>exec</code> see them, and of 27,028 tests of CPython's own suite four now end
+differently under the compiler, where it was 21.</p>
 </div>""")
 
     A(C.tiles([
@@ -222,9 +240,9 @@ stack.</p>""")
     A(groups_table())
 
     # ---------------------------------------------------------------- 2
-    A("<h2>2. The path: four versions of the graph backend</h2>")
+    A("<h2>2. The path: five versions</h2>")
     A(f"""<p>The VM came first and took the first three of the six days: the language, the fidelity to CPython, the measured choice between
-VM and interpreter. The comparison with <code>torch.compile</code> starts with the graph backend, which went through four versions. Each was
+VM and interpreter. The comparison with <code>torch.compile</code> starts with the graph backend, which went through four versions, and a fifth that left speed alone. Each was
 benchmarked on the same {len(E['names'])} models; the numbers of the earlier versions are from their own runs on a shared machine, so read
 the trend, not the second decimal.</p>""")
     A(fig_path())
@@ -240,9 +258,17 @@ cm3leon_generate 1.08), which were compiled once per sequence length.</td></tr>
 to the caches and objects it is handed is replayed ({prs(204981, 204991)}).</td><td>Parity: hf_T5_generate 1.00, cm3leon_generate 1.02, llama 1.00, with
 fewer graphs than <code>torch.compile</code> (6 against 10 for T5). At this point both compilers ran the same kernels on the same graphs.</td></tr>
 <tr><td>v4<br><span class="muted">Nov 16</span></td><td>Memory kept per function, weights built in behind a check, one-row products
-({prs(205043, 205052)}, {pr(205088)} to {pr(205103)}).</td><td>{E['alone_geo']:.2f} for inference and {T['alone_geo']:.2f} for training. The rest
-of this page is about this version.</td></tr>
+({prs(205043, 205052)}, {pr(205088)} to {pr(205103)}).</td><td>{E4['alone_geo']:.2f} for inference and {T4['alone_geo']:.2f} for training, and
+memory to match: in training {D.geo(r for r, *_ in h4):.2f} times what <code>torch.compile</code> holds over the {len(h4)} models where it was
+recorded, hf_Reformer at 4.3 times.</td></tr>
+<tr><td>v5<br><span class="muted">Nov 17</span></td><td>The variables of a function in its frame, so that <code>eval</code>, <code>exec</code>,
+tracebacks and debuggers find them; calls under a trace function left to the interpreter; a recording that kept tensors alive; a workspace
+that cuts memory to size ({prs(205188, 205195)}).</td><td>{E['alone_geo']:.2f} for inference and {T['alone_geo']:.2f} for training; memory
+{held_geo:.2f} in training and {held_geo_eval:.2f} in inference. The rest of this page is about this version.</td></tr>
 </table>""")
+    A(f"""<p>The fifth version was about fidelity and memory, not speed, and the ratio between the two compilers did not move
+({E4['alone_geo']:.2f} and {E['alone_geo']:.2f} for inference). Inference was measured again in all three modes for it, and eager ran
+about 5% faster in that run than in the one of v4, which is why both lines of the left chart end lower than they were.</p>""")
     A("""<p>The step from v3 to v4 is the answer to a direct question: with the two compilers at parity, is there anything the architecture
 can do that Dynamo does not? Profiles said the remaining time was in library kernels (82% of resnet50 in <code>convolution</code>, 85% of
 hf_Bert in <code>addmm</code>), so the search went to what surrounds the kernels.</p>""")
@@ -346,16 +372,21 @@ configurations, and the other three fail in eager mode too.</p>""")
 lets the VM compile whatever those methods call, and compares the outcome of each test with its outcome under the plain interpreter.</p>""")
     A(C.tiles([
         ("CPython test modules run through the VM", "183", "27,028 tests"),
-        ("Test methods compiled", "16,900", "246 left to the interpreter: <code>eval</code>, <code>exec</code>, generators"),
-        ("Outcomes that differ from the interpreter", "21", "it was 81, and a segmentation fault, on the first 83 modules"),
-        ("Tests of the stack itself", "317", "those of the last two rounds each checked to fail without their change"),
+        ("Test methods compiled", "17,131", "15 left to the interpreter: generators, <code>except*</code>; it was 246"),
+        ("Outcomes that differ from the interpreter", "4", "it was 21 in the last version, and 81 with a segmentation fault at the start"),
+        ("Tests of the stack itself", "341", "those of the last three rounds each checked to fail without their change"),
     ]))
-    A("""<p>These are from the last conformance run, on the version of Nov 15; the two rounds since changed the graph backend and the
-benchmark, not the VM or the frontend. None of the 21 is in the result of a computation: nine are about <code>f_locals</code> (locals live in registers, not in the
-frame), seven about <code>sys.settrace</code> line events that compiled code does not raise, the rest about reference counts and
-specializer internals. Getting from 81 to 21 was a round of its own: real frames for compiled and inlined calls so tracebacks have
-columns, CPython's exact error messages, locals released when the interpreter releases them, signals and thread switches inside compiled
-loops, a recursion limit that means the same depth.</p>
+    A(f"""<p>These are from a run on the top of the stack. None of the four is in the result of a computation: two are a disassembly that shows
+which loops the interpreter's own specializer saw, one is a code object corrupted by hand, one a garbage collection that comes one object
+earlier. Getting from 81 to 21 was a round of its own: real frames for compiled and inlined calls so tracebacks have columns, CPython's exact
+error messages, locals released when the interpreter releases them, signals and thread switches inside compiled loops, a recursion limit
+that means the same depth. Getting from 21 to 4 was the fifth version. Seventeen of the 21 had one of two causes: the variables of a
+compiled function lived in the VM's registers and its frame was empty, and a trace function was not told about what compiled code called.
+Now every assignment also binds the variable in the frame ({pr(205189)}), which is what let functions that call <code>eval</code>,
+<code>exec</code> or <code>super()</code> be compiled at all ({pr(205190)}: 231 of the 246 test methods that had been turned down), and
+while <code>sys.settrace</code> is set, calls run in the interpreter ({pr(205191)}). On tensor code the frame costs nothing that can be
+measured, because a tensor that only kernels touch is bound to its variable when something can look, not before; on plain Python loops that
+the VM is forced to run it costs 6 to 12%.</p>
 <p><strong>What "matches" does not cover.</strong> A region checks its inputs (tensors, modules and their structure, values, modes) and
 what its own path read from modules and globals. It does not check what a callee that the trace ran in the interpreter read from an
 object that is not an input. Dynamo guards those reads; this does not yet.</p>""")
@@ -388,14 +419,36 @@ the pieces around it become regions of their own.</p>""")
 
     # ---------------------------------------------------------------- 7
     A("<h2>7. What it costs: memory</h2>")
-    A(f"""<p>The workspace holds what a call freed for the next call: up to one and a half times what the call had in use at its peak, on
-top of what is in use. In inference that is modest: the process of resnet50 grows by 566 MB over its calls, against 224 MB for
-<code>torch.compile</code> (406 MB with <code>freezing</code>); hf_Bert by 219 MB against 192 MB. In training it is usually about the
-same as <code>torch.compile</code>, and on a few models far more:</p>""")
+    A(f"""<p>The workspace holds what a call freed for the next call, and the process has that memory whether or not a call is running. In
+the last version that was the one cost that should not have shipped: whole blocks were kept, up to one and a half times the peak of a
+call on top of what was in use, and single models held four times what <code>torch.compile</code> holds. Two changes went in
+({pr(205194)}, {pr(205195)}), and this is where it stands:</p>""")
     A(mem_fig)
-    A(f"""<p>Over these {len(h)} models the geometric mean is {held_geo:.2f}. The outliers are models whose step makes and frees many large
-tensors of different sizes: {', '.join(f'{n} {a:.0f} GB against {b:.0f} GB' for r, n, a, b, e in worst)}. The memory is held, not lost
-(demucs sat at 55.7 GB for the eight minutes it was watched), but it is too much, and section 11 says what to do about it.</p>""")
+    A(mem_fig_eval)
+    A(f"""<p>Training, {len(h)} models: geometric mean {held_geo:.2f}; the most are
+{', '.join(f'{n} {gb(a)} against {gb(b)}' for r, n, a, b, e in worst)}. Inference, {len(he)} models: {held_geo_eval:.2f}; the most are
+{', '.join(f'{n} {gb(a)} against {gb(b)}' for r, n, a, b, e in worst_eval)}.</p>
+<p><strong>What the two changes were.</strong> The largest number of the last version, hf_Reformer at 18 GB against 4 GB, was not the
+workspace at all. The first times the VM runs a call of a C function it records the kernel calls underneath, to see whether the call is one
+kernel that it can call directly from then on, and the record kept the arguments and results of all of them alive until the call returned.
+<code>torch.autograd.Function.apply</code> is such a C function, and in hf_Reformer what runs under it is the whole reversible encoder: the
+first training step held every tensor of every layer at once, 18 GB, and every later step 4. A record now lets go of its tensors as soon
+as it sees a second kernel call. The other change is the workspace itself: instead of keeping whole blocks and handing one out when it is
+between the size asked for and twice that size, it cuts what is asked for out of the memory it holds, closest fit first, joins what comes
+back with the free memory next to it, and holds at most the peak of its tensors plus half of that, 256 MB at most. Replaying the requests
+of eleven models under both policies, the most that is held over the most the tensors ask for at once went from 1.55 to 1.24, and the
+share of a call's bytes that has to come from the system, which is what costs page faults, from 4.9% to 1.1%: less memory and no less
+speed.</p>
+<p><strong>What is left.</strong> A function still holds about the peak of its tensors between calls, where <code>torch.compile</code>
+gives everything back: that is what keeping memory means, and <code>keep_memory=False</code> is there for a process that cannot afford
+it. And the first calls of a function run before its graphs exist, one kernel at a time, and can hold more at once than the calls after
+them: a training step of vgg16 asks for 4.95 GB at once in its first two calls and for 3.02 GB from the third on, and the memory of the
+first calls stays in use because the later ones are cut out of it. A limit that follows the last few calls was tried in four variants and
+did not get vgg16 below 5.9 GB (6.3 GB as it is; 4.7 GB without a workspace), so it is not in the stack.</p>
+<p><strong>Not better everywhere.</strong> Of the {len(change)} training models that were measured the same way in the last version,
+{len(fewer)} hold less now ({', '.join(f'{n} {v:.2f} of what it held' for v, n in fewer[:3])}) and {len(more)} hold more
+({', '.join(f'{n} {v:.2f}' for v, n in more[:4])}). Keeping whole blocks suited a model whose sizes repeat exactly from call to call;
+cutting to size suits the others, and costs those a few percent.</p>""")
 
     # ---------------------------------------------------------------- 8
     A("<h2>8. The VM without a graph backend</h2>")
@@ -441,17 +494,19 @@ convolutional models.</li>
 <li><strong>Time to steady state in training</strong>: {T['warm_geo']['cfg']:.1f} s against {T['warm_geo']['compile']:.1f} s.</li>
 </ul></div>
 <div><h3>Behind</h3><ul>
-<li><strong>Memory in training on a few models</strong>: hf_Reformer 18 GB against 4 GB, demucs 60 GB against 36 GB.</li>
-<li><strong>Very short calls</strong>: lennard_jones ({D.ms(lj['cfg']['call_s'])} against {D.ms(lj['compile']['call_s'])}) is
-{E['alone']['lennard_jones']:.2f} alone and {E['paired']['lennard_jones']:.2f} in turns, and soft_actor_critic (2.4 ms) no better than level
-({E['alone']['soft_actor_critic']:.2f}); entering a region costs a walk over its arguments in Python.</li>
+<li><strong>Memory</strong>: {held_geo:.2f} times <code>torch.compile</code>'s peak in training, {held_geo_eval:.2f} in inference; most on
+{worst[0][1]} ({gb(worst[0][2])} against {gb(worst[0][3])}).</li>
+<li><strong>Very short calls</strong>: soft_actor_critic ({D.ms(EV['soft_actor_critic']['cfg']['call_s'])} against
+{D.ms(EV['soft_actor_critic']['compile']['call_s'])}) is {E['alone']['soft_actor_critic']:.2f} alone, and lennard_jones
+({D.ms(lj['cfg']['call_s'])}) no better than level ({E['alone']['lennard_jones']:.2f}); entering a region costs a walk over its
+arguments in Python.</li>
 <li><strong>One training model</strong>: resnet152 at {T['alone']['resnet152']:.2f} alone ({T['paired']['resnet152']:.2f} in turns).</li>
 <li><strong>Plain Python in the VM</strong>: three to four times slower than CPython when forced; hidden by handing it back.</li>
 <li><strong>The optimizer step is not compiled</strong>; <code>torch.compile</code> compiles it.</li>
 <li><strong>Guards</strong>: reads made by interpreted callees from objects that are not inputs are not checked.</li>
 <li><strong>Not built</strong>: generators, coroutines, <code>except*</code>; sizes that only data decides; Python other than 3.12.</li>
 <li><strong>Not measured</strong>: anything on CUDA. The workspace is for CPU memory only.</li>
-<li><strong>Maturity</strong>: six days old; 81 of the 86 PRs have had neither review nor CI.</li>
+<li><strong>Maturity</strong>: a week old; 89 of the 94 PRs have had neither review nor CI.</li>
 </ul></div>
 </div>""")
 
@@ -485,6 +540,14 @@ nothing above a fraction of it, and stops its own largest process above a second
 at 55 GB where eager peaks at 8 GB. A region that is handed a loss module built inside <code>forward</code>, as every model of
 transformers does, made a variant per step, and each variant kept that step's logits alive: 393 MB per step. Fixed, with the price that
 the small region around such a loss now runs uncompiled ({pr(205102)}, {pr(205103)}).</li>
+<li><strong>A memory table that mixed two measurements.</strong> Thirteen training rows of the last version's results were from a run made
+before the harness recorded the peak of the <code>cfg_compile</code> process ahead of the calls in turns, so their peak included
+<code>torch.compile</code> and its copy of the model in the same process. They were left out of the geometric mean that was reported
+(1.07 over 35 models), but they stood in the table, and densenet121 looked like 68 GB against 33 GB there. Every row of this version is
+measured the same way.</li>
+<li><strong>A recording that kept a model's tensors alive.</strong> The 18 GB of hf_Reformer was attributed to the workspace for a
+day. It was the VM's recording of a C function's kernel calls (section 7), found only when the same peak showed with the workspace
+switched off.</li>
 <li><strong>Tests that passed without the feature.</strong> Small functions are inlined into the compiled function, so three new tests
 never exercised the code they were written for. Every new test is now run against the parent commit, and must fail there.</li>
 </ul>""")
@@ -492,10 +555,13 @@ never exercised the code they were written for. Every new test is now run agains
     # ---------------------------------------------------------------- 11
     A("<h2>11. Suggested next steps</h2>")
     A(f"""<ol>
-<li><strong>Bound what the workspace holds.</strong> Limit the sum of what is in use and what is kept to about 1.25 to 1.5 times the
-peak, accept a kept block only if it is at most a quarter larger than the request (it is twice now), and evict on a miss. This needs
-re-measuring densenet121, hf_T5_generate, hf_Reformer and demucs, since the same slack is what makes those fast. It is the one known
-cost that should not ship as it is.</li>
+<li><strong>Make the graphs before the first call runs.</strong> What is left of the memory cost is the first calls of a function, which run
+kernel by kernel and hold more at once than its graphs do later (section 7). Tracing a region on the arguments of the first call, instead
+of after a few calls that are surveyed, would take that away, and with it most of the time to the steady state.</li>
+<li><strong>Run generators in the VM where it pays.</strong> With the variables in the frame, a generator's state can live where the
+interpreter keeps it. On its own the measurement would hand a generator back to the interpreter; it pays where the body is inlined into the
+loop that drives it. The <code>hold</code> instruction, which keeps a value alive as long as its variable, is redundant now that the frame
+does, and removing it takes values out of what regions are handed.</li>
 <li><strong>Keep the loss region of transformer models compiled.</strong> Name a module that has no tensors by its class and attribute
 values instead of its identity, so that a loss built on every call is one variant and not one per call. The leak fix retires that region
 instead, which is safe and gives up a little speed on every HuggingFace training step.</li>
