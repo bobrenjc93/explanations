@@ -161,7 +161,8 @@ def suite_summary(base, table=None):
     rows = [r for _, suite in SUITE_NAMES for r in suite_rows(suite, base, table)]
     if rows:
         out["all"] = {"n": len(rows), "geo": D.geo(r["ratio"] for r in rows), "ahead": sum(r["ratio"] < 0.97 for r in rows), "behind": sum(r["ratio"] > 1.03 for r in rows),
-                      "base": D.geo(r["base"] for r in rows), "rewrite": D.geo(r["rewrite"] for r in rows), "held": D.geo(r["held"] for r in rows if r["held"])}
+                      "base": D.geo(r["base"] for r in rows), "rewrite": D.geo(r["rewrite"] for r in rows), "held": D.geo(r["held"] for r in rows if r["held"]),
+                      "compile": (D.geo(r["compile"][0] for r in rows), D.geo(r["compile"][1] for r in rows))}
     return out
 
 
@@ -254,7 +255,7 @@ GROUPS = [
     ("Memory, weights and one-row products", 14, "1,651", "The fourth version, described below, with two leak fixes and three fixes to the benchmark."),
     ("The variables of the frame, and memory again", 8, "1,151", "The fifth version: frames that have their variables, <code>eval</code> and <code>exec</code> compiled, trace functions, and what the processes hold."),
     ("A list of passes, the frame hook, passes of the user's, CPython 3.14, the GPU", 17, "4,484", "The sixth version: <code>torch.rewrite(fn, passes=[...])</code>, the functions that C code calls, <code>swap</code> and passes in Rust, the port to 3.14, and three fixes found on the GPU."),
-    ("The GPU again: sizes that depend on data, the cost of a region's call, the dashboard's runner", 17, "2,222", "The seventh version: a size that only data decides stays in a graph, a call like the one before is told in the runtime, the perf dashboard's runner measures <code>torch.rewrite</code>, and what its suites found, the update of an optimizer among it."),
+    ("The GPU again: sizes that depend on data, the cost of a region's call, the dashboard's runner", 18, "2,374", "The seventh version: a size that only data decides stays in a graph, a call like the one before is told in the runtime, the perf dashboard's runner measures <code>torch.rewrite</code>, and what its suites found, the update of an optimizer and the chunks of the interpreter's frame stack among it."),
     ("Tests, benchmarks and tools", 4, "510", "The micro benchmarks and the runner for CPython's own test suite."),
 ]
 
@@ -274,7 +275,7 @@ def groups_table():
 
 TITLE = "torch.rewrite: a function as a control-flow graph and a list of rewrites, measured against torch.compile"
 SUB = ("A prototype that compiles the bytecode of a Python function to one control-flow graph, runs it in a Rust VM and hands the tensor work "
-       "to Inductor: what was built over 128 draft PRs, how it compares with torch.compile on TorchBench and on the perf dashboard's suites in accuracy, speed, compile time and "
+       "to Inductor: what was built over 129 draft PRs, how it compares with torch.compile on TorchBench and on the perf dashboard's suites in accuracy, speed, compile time and "
        "memory, where it is ahead, where it is behind, and what to do next. Nov 11 to Nov 18, 2026.")
 
 
@@ -302,7 +303,7 @@ def body():
 <p><strong>TL;DR.</strong> <code>torch.rewrite</code> is a prototype of a different front end for PyTorch's compiler. It turns the
 bytecode of a function into one control-flow graph in SSA form, runs that graph in a VM written in Rust, traces on real tensors, and hands the
 tensor work of each path through the graph to AOTAutograd and Inductor, the compiler <code>torch.compile</code> uses behind Dynamo. It exists as
-a stack of 128 draft pull requests against pytorch/pytorch, about 34,900 lines. It was called <code>torch.cfg_compile</code> until the
+a stack of 129 draft pull requests against pytorch/pytorch, about 35,000 lines. It was called <code>torch.cfg_compile</code> until the
 sixth version, which renamed it for what the one who calls it does: hand over a function and a list of rewrites.</p>
 <p>On the TorchBench models that run on this CPU box, it takes <strong>{E['alone_geo']:.2f} of the time of <code>torch.compile</code> for
 inference</strong> ({len(E['names'])} models) and <strong>{T['alone_geo']:.2f} for training</strong> ({len(T['names'])} models), geometric
@@ -409,8 +410,8 @@ harness on a build without cuDNN.</td></tr>
 <tr><td>v7<br><span class="muted">Nov 18</span></td><td>The GPU as the perf dashboard measures it. A size that only data decides stays in
 the graph; a call that is like the one before is told so in the runtime, with the dicts of the modules watched; the dashboard's runner
 measures <code>torch.rewrite</code>; and what its suites found: which weights are built in, and what a call through a method of an
-object costs; the update of an optimizer as a region ({prs(205326, 205335)}, {pr(205357)}, {pr(205397)}, {pr(205405)}, {pr(205409)},
-{pr(205410)}, {pr(205436)}, {pr(205437)}).</td><td>On the GPU, on the dashboard's suites with cuDNN:
+object costs; the update of an optimizer as a region; the chunks of the interpreter's frame stack kept ({prs(205326, 205335)},
+{pr(205357)}, {pr(205397)}, {pr(205405)}, {pr(205409)}, {pr(205410)}, {pr(205436)}, {pr(205437)}, {pr(205502)}).</td><td>On the GPU, on the dashboard's suites with cuDNN:
 {suite_summary("inductor")["all"]["geo"]:.2f} of the time of <code>torch.compile</code> for inference,
 {suite_summary("freezing")["all"]["geo"]:.2f} of <code>torch.compile</code> with freezing, and
 {suite_summary("inductor", D.SUITES_TRAIN)["all"]["geo"]:.2f} for training. The CPU was not measured again.</td></tr>
@@ -523,7 +524,7 @@ lets the VM compile whatever those methods call, and compares the outcome of eac
         ("CPython test modules run through the VM", "183", "27,028 tests"),
         ("Test methods compiled", "17,121", "25 left to the interpreter: generators, <code>except*</code>, functions that enter a debugger"),
         ("Outcomes that differ from the interpreter", "5", "it was 21 two versions ago, and 81 with a segmentation fault at the start"),
-        ("Tests of the stack itself", "396", "under CPython 3.12; 373 on a CPU build under 3.14 before the last seven PRs; those of the last five rounds each checked to fail without their change"),
+        ("Tests of the stack itself", "397", "under CPython 3.12; 373 on a CPU build under 3.14 before the last eight PRs; those of the last five rounds each checked to fail without their change"),
     ]))
     A(f"""<p>These are from a run on the top of the stack, with the frame hook on: what C code calls under a test method (comparisons, hashes,
 <code>__init__</code>, properties, callbacks) runs in the VM too. None of the five is in the result of a computation: one counts objects
@@ -640,9 +641,10 @@ measure <code>torch.compile</code>. For inference <code>torch.compile</code> was
 <code>freezing</code>, which is the comparison to make: <code>torch.rewrite</code> builds weights into its graphs, as freezing does. The
 HuggingFace models that go through <code>generate</code> are left out (<code>--rewrite</code> has no path for them), and the TorchBench
 models that fail under both compilers on this machine.</p>
-<p>The machine is shared, and other work held memory on the GPU during these runs. TorchBench under <code>torch.compile</code> as it comes,
-and every training run, were measured model by model, <code>torch.compile</code> and <code>torch.rewrite</code> one right after the
-other; the first runs of those had probes of this report's own on the GPU for part of the time and are not used.</p>""")
+<p>The machine is shared. Every model was measured under the compilers one right after the other, in an order that takes turns, on
+the build of {pr(205502)}; earlier runs had probes of this report's own on the GPU for part of the time and are not used. Between two
+such runs of the training suites, five hours apart, the ratio of a model moved by a percent or two at the median and by up to a tenth,
+and by more for models whose step takes a few milliseconds: a single model says less than a mean.</p>""")
     tiles = [
         ("GPU inference: time over torch.compile", f"{DS['all']['geo']:.2f}", f"{DS['all']['n']} models of three suites; {DS['all']['ahead']} ahead, {DS['all']['behind']} behind"),
         ("GPU inference: time over torch.compile with freezing", f"{FS['all']['geo']:.2f}", f"{FS['all']['n']} models; {FS['all']['ahead']} ahead, {FS['all']['behind']} behind"),
@@ -695,7 +697,7 @@ pyhpc_equation_of_state, and 0.069 ms for both when the calls are back to back. 
 graph there and compiles what follows for the size it saw; that this is what costs the 9% was not measured.</li>
 <li><strong>Memory is the price</strong>: the runner records the most that was allocated on the GPU while a model is warmed up and
 compiled, and <code>torch.rewrite</code> has {DS['huggingface']['held']:.2f} times what <code>torch.compile</code> has there on HuggingFace,
-{DS['timm_models']['held']:.2f} on timm and {DS['torchbench']['held']:.2f} on TorchBench. The first calls of a rewritten function run the
+{DS['timm_models']['held']:.2f} on timm and {DS['torchbench']['held']:.2f} on TorchBench (where the smallest models hold tens of megabytes and the ratio moves with them: it was 1.33 a run earlier). The first calls of a rewritten function run the
 model kernel by kernel on real tensors, so its peak is never under eager's, where <code>torch.compile</code> never runs the model that way;
 and a weight that is built in is held a second time (XGLM: 6.0 GB, where it was 4.9 GB before the matrices of its products were built in).</li>
 <li><strong>Training</strong>: {TS['all']['geo']:.2f} of the time of <code>torch.compile</code> over {TS['all']['n']} models
@@ -704,7 +706,21 @@ and a weight that is built in is held a second time (XGLM: 6.0 GB, where it was 
 HuggingFace, {listed(TS['timm_models']['behind'], 3)} on timm). The forward and the loss are one graph under both, and the backward is AOTAutograd's.
 What <code>torch.rewrite</code> did not have when the suites were first run was the step of the optimizer as a graph:
 <code>torch.compile</code> compiles it, and the regions pass did not look at <code>torch/optim/</code>. With the update a region
-({pr(205437)}), a step of deit_tiny takes 12.4 ms, as under <code>torch.compile</code> in the same process, where it took 14.3 ms.</li>
+({pr(205437)}), a step of deit_tiny takes 12.4 ms, as under <code>torch.compile</code> in the same process, where it took 14.3 ms.
+Getting there costs more: a training step is called some hundred times while its levels of calls are measured one after another,
+{TS['all']['compile'][1]:.0f} s of warm-up where <code>torch.compile</code> compiles for {TS['all']['compile'][0]:.0f} s (geometric means).</li>
+<li><strong>An accident of the interpreter had two models a quarter behind.</strong> CPython keeps the frames of a thread in chunks of
+16 KB and unmaps a chunk the moment the frame at its start returns. The code Inductor generates for a graph has one large frame and
+launches the graph's kernels from it. Where the runner calls tf_efficientnet_b0 for training under <code>torch.rewrite</code>, that
+frame ended 112 bytes short of the end of a chunk, and each of the 452 kernel launches of a step mapped a chunk and unmapped it again:
+30.5 ms a step, and 23.3 ms with one more Python frame anywhere above. The runtime now keeps the chunks that are freed
+({pr(205502)}), and the numbers here are of that build. It is not <code>torch.rewrite</code>'s accident alone. The timed loops ask
+for these many chunks a step: under <code>torch.rewrite</code>, which now has them at hand, {D.chunks("suites_r25e_train", ("rewrite",))}
+in training and {D.chunks("suites_r25e", ("rewrite",))} in inference; under <code>torch.compile</code>, which maps them as it would
+on the dashboard, {D.chunks("suites_r25e_train", ("inductor",))} in training and {D.chunks("suites_r25e", ("inductor", "freezing"))}
+in inference. With those four run a second time and the chunks kept for <code>torch.compile</code> as well, its step of
+ElectraForCausalLM is 12% shorter (<code>torch.rewrite</code> is then at 0.96 of its time, not 0.89) and those of the other three 0% to 5%; training as a whole is then at
+{D.kept(D.SUITES_TRAIN, "inductor")[0]:.3f} of the time of <code>torch.compile</code>, where it is at {TS['all']['geo']:.3f} with the first runs.</li>
 <li><strong>Compile time</strong>: {DS['huggingface']['compile'][1]:.0f} s against {DS['huggingface']['compile'][0]:.0f} s on HuggingFace,
 {DS['timm_models']['compile'][1]:.0f} s against {DS['timm_models']['compile'][0]:.0f} s on timm, {DS['torchbench']['compile'][1]:.0f} s
 against {DS['torchbench']['compile'][0]:.0f} s on TorchBench (geometric means, as the runner reports them).</li>
@@ -874,7 +890,7 @@ arguments in Python.</li>
 <li><strong>Not built</strong>: generators, coroutines, <code>except*</code>; regions over modules with hooks; Python other than 3.12 and 3.14.</li>
 <li><strong>On a GPU</strong> (section 9): {suite_summary("inductor")["all"]["held"]:.2f} times the peak memory of <code>torch.compile</code>;
 a model whose modules have hooks runs at the speed of eager (opacus_cifar10); calls of under a tenth of a millisecond.</li>
-<li><strong>Maturity</strong>: a week old; 123 of the 128 PRs have had neither review nor CI.</li>
+<li><strong>Maturity</strong>: a week old; 124 of the 129 PRs have had neither review nor CI.</li>
 </ul></div>
 </div>""")
 
@@ -989,7 +1005,7 @@ python benchmarks/rewrite/torchbench.py --torchbench &lt;pytorch/benchmark check
     --results results.jsonl</code></pre>
 <p>The result files behind the charts and the per-model tables are in
 <a href="https://github.com/bobrenjc93/explanations/tree/main/cfg-compile/results">cfg-compile/results</a> (one JSON line per model,
-test and compiler; <code>final_r22.jsonl</code> is the final CPU run; <code>suites_r25c/</code>, <code>suites_r25d/</code> and <code>suites_r25d_train/</code> have what the dashboard's runner wrote on the GPU, one CSV per suite and compiler; <code>gpu_r24.jsonl</code> and <code>gpu_r23.jsonl</code> are the stack's harness on the GPU, on a build without cuDNN; the others are the earlier versions), and the generator of this page
+test and compiler; <code>final_r22.jsonl</code> is the final CPU run; <code>suites_r25e/</code> and <code>suites_r25e_train/</code> have what the dashboard's runner wrote on the GPU, one CSV per suite and compiler (<code>-kept</code>: the second runs, with the chunks kept for <code>torch.compile</code> too), and <code>chunks.log</code> the chunks each timed loop asked for; <code>suites_r25c/</code>, <code>suites_r25d/</code> and <code>suites_r25d_train/</code> are the runs before those; <code>gpu_r24.jsonl</code> and <code>gpu_r23.jsonl</code> are the stack's harness on the GPU, on a build without cuDNN; the others are the earlier versions), and the generator of this page
 in <a href="https://github.com/bobrenjc93/explanations/tree/main/cfg-compile/code">cfg-compile/code</a>. Numbers quoted from
 single-model runs (section 4, the micro benchmarks, the conformance run) are from the descriptions of the PRs that made each change and
 from the report in the top PR. The top of the stack is {pr(204763)}.</p>""")

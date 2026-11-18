@@ -1,0 +1,2 @@
+dev,name,batch_size,speedup,abs_latency,compilation_latency,compression_ratio,eager_peak_mem,dynamo_peak_mem,calls_captured,unique_graphs,fallbacks_to_eager,graph_breaks,unique_graph_breaks,autograd_captures,autograd_compiles,cudagraph_skips
+cuda,nfnet_l0,128,1.639207,36.871457,9.385687,1.002012,6.466251,6.453270,1205,3,0,8,6,0,0,0

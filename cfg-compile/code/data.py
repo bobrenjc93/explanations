@@ -142,9 +142,47 @@ def suites(folder):
     return out
 
 
-SUITES = suites("suites_r25c")
-# Model by model, torch.compile and torch.rewrite one right after the other (the machine is shared, and suites run
-# hours apart had other work on the GPU for parts of them): TorchBench for inference, and the three suites for training.
-SUITES_PAIRED = suites("suites_r25d")
-SUITES_TRAIN = suites("suites_r25d_train")
+# Model by model, the compilers one right after the other (the machine is shared), on the build that keeps the freed
+# chunks of the interpreter's frame stack and with the runner warmed up as its timed loop calls.
+SUITES = suites("suites_r25e")
+SUITES_PAIRED = SUITES
+SUITES_TRAIN = suites("suites_r25e_train")
+
+
+def chunks(folder, configs, least=100):
+    """The models whose timed loop asked for at least `least` chunks of the frame stack a repetition under one of
+    `configs`, with that number: from the chunks.log the runs wrote (the count after the loop's first repetition
+    where it was taken apart, else the count from the loop's start over its 30 repetitions)."""
+    import re
+
+    found = {}
+    with open(os.path.join(RESULTS, folder, "chunks.log")) as f:
+        for line in f:
+            if "keep 1" in line.split("|")[0]:
+                continue
+            config = "rewrite" if "--rewrite" in line else "freezing" if "--freezing" in line else "inductor"
+            steady = re.search(r"(-?\d+) after its first repetition", line)
+            per = int(steady.group(1)) / 29 if steady else int(line.split()[0]) / 30
+            name = re.search(r"--only (\S+)", line).group(1)
+            if config in configs and per >= least:
+                found[name] = max(found.get(name, 0), per)
+    return ", ".join(f"{name} ({per:.0f})" for name, per in sorted(found.items(), key=lambda kv: -kv[1])) or "none"
+
+
+def kept(table, base):
+    """The time of torch.rewrite over torch.compile's (geometric mean, and over how many models), with the models
+    that were run a second time with the chunks kept for torch.compile's process too taken from that second pair."""
+    ratios, again = [], 0
+    for (suite, config), rows in table.items():
+        if config != base:
+            continue
+        rewrite, plain2, rewrite2 = table.get((suite, "rewrite"), {}), table.get((suite, base + "-kept"), {}), table.get((suite, "rewrite-kept"), {})
+        for name, row in rows.items():
+            if name in rewrite:
+                if name in plain2 and name in rewrite2:
+                    ratios.append(float(plain2[name]["speedup"]) / float(rewrite2[name]["speedup"]))
+                    again += 1
+                else:
+                    ratios.append(float(row["speedup"]) / float(rewrite[name]["speedup"]))
+    return geo(ratios), len(ratios), again
 GPU_FIRST = gpu("gpu_first.jsonl")
