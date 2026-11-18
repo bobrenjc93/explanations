@@ -123,4 +123,25 @@ def gpu(path):
 
 
 GPU = gpu("gpu_r23.jsonl")
+# The same harness on the seventh version (inference; its training rows are the sixth version's). Like every run of
+# that harness on a GPU, on a build of PyTorch without cuDNN.
+GPU7 = gpu("gpu_r24.jsonl")
+
+
+def suites(folder):
+    """The perf dashboard's runner (benchmarks/dynamo) on one GPU: (suite, configuration) -> model -> row of its CSV.
+    A row has the speedup over eager, the compiled latency, the compile time and the peak GPU memory."""
+    import csv
+    import glob
+
+    out = {}
+    for path in sorted(glob.glob(os.path.join(RESULTS, folder, "*.csv"))):
+        config, suite = os.path.basename(path)[:-4].split("_", 1)
+        with open(path, newline="") as f:
+            out[(suite, config)] = {r["name"]: r for r in csv.DictReader(f) if float(r["speedup"]) > 0}
+    return out
+
+
+SUITES = suites("suites_r25c")
+SUITES_TRAIN = suites("suites_r25c_train")
 GPU_FIRST = gpu("gpu_first.jsonl")

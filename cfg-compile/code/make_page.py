@@ -130,6 +130,91 @@ def gpu_moved(name, test="eval"):
     return f"{name} from {before[0]['ratio']:.2f} to {now[0]['ratio']:.2f} of the time of <code>torch.compile</code>"
 
 
+SUITE_NAMES = (("HuggingFace", "huggingface"), ("timm", "timm_models"), ("TorchBench", "torchbench"))
+
+
+def suite_rows(suite, base, table=None):
+    """The models of a suite that ran under `base` (inductor or freezing) and under torch.rewrite, with the time of
+    torch.rewrite over the base's: the ratio of two speedups over eager, each measured in turns with eager."""
+    table = D.SUITES if table is None else table
+    plain, rewrite = table.get((suite, base), {}), table.get((suite, "rewrite"), {})
+    rows = []
+    for name in plain:
+        if name in rewrite:
+            p, r = plain[name], rewrite[name]
+            held = float(r["dynamo_peak_mem"]) / float(p["dynamo_peak_mem"]) if float(p["dynamo_peak_mem"]) > 0 and float(r["dynamo_peak_mem"]) > 0 else None
+            rows.append({"name": name, "ratio": float(p["speedup"]) / float(r["speedup"]), "base": float(p["speedup"]), "rewrite": float(r["speedup"]), "batch": p["batch_size"],
+                         "held": held, "compile": (max(float(p["compilation_latency"]), 0.01), max(float(r["compilation_latency"]), 0.01))})
+    return sorted(rows, key=lambda r: r["ratio"])
+
+
+def suite_summary(base, table=None):
+    out = {}
+    for title, suite in SUITE_NAMES:
+        rows = suite_rows(suite, base, table)
+        if rows:
+            out[suite] = {"title": title, "n": len(rows), "geo": D.geo(r["ratio"] for r in rows), "ahead": [r for r in rows if r["ratio"] < 0.97],
+                          "behind": [r for r in rows if r["ratio"] > 1.03][::-1], "base": D.geo(r["base"] for r in rows), "rewrite": D.geo(r["rewrite"] for r in rows),
+                          "held": D.geo(r["held"] for r in rows if r["held"]), "compile": (D.geo(r["compile"][0] for r in rows), D.geo(r["compile"][1] for r in rows))}
+    rows = [r for _, suite in SUITE_NAMES for r in suite_rows(suite, base, table)]
+    if rows:
+        out["all"] = {"n": len(rows), "geo": D.geo(r["ratio"] for r in rows), "ahead": sum(r["ratio"] < 0.97 for r in rows), "behind": sum(r["ratio"] > 1.03 for r in rows),
+                      "base": D.geo(r["base"] for r in rows), "rewrite": D.geo(r["rewrite"] for r in rows), "held": D.geo(r["held"] for r in rows if r["held"])}
+    return out
+
+
+def listed(rows, limit=5):
+    return ", ".join(f"{r['name']} {r['ratio']:.2f}" for r in rows[:limit]) or "none"
+
+
+def fig_suite(suite, title, training=False):
+    """One suite, per model: against torch.compile with freezing for inference, against torch.compile for training."""
+    table = D.SUITES_TRAIN if training else D.SUITES
+    rows = suite_rows(suite, "inductor" if training else "freezing", table)
+    plain = {r["name"]: r for r in suite_rows(suite, "inductor", table)}
+    items, cells = [], []
+    for r in rows:
+        p = plain.get(r["name"])
+        tip = [("torch.rewrite", x(r["rewrite"]) + " eager")]
+        if training:
+            tip.append(("torch.compile", x(r["base"]) + " eager"))
+        else:
+            tip.append(("torch.compile, freezing", x(r["base"]) + " eager"))
+            if p:
+                tip.append(("torch.compile", x(p["base"]) + " eager"))
+        tip.append(("batch size", r["batch"]))
+        items.append({"name": r["name"], "v": r["ratio"], "tip": tip})
+        held = f"{r['held']:.2f}" if r["held"] else ""
+        if training:
+            cells.append([r["name"], r["batch"], f"{r['base']:.2f}", f"{r['rewrite']:.2f}", f"{r['ratio']:.2f}", held])
+        else:
+            cells.append([r["name"], r["batch"], f"{p['base']:.2f}" if p else "", f"{r['base']:.2f}", f"{r['rewrite']:.2f}", f"{p['ratio']:.2f}" if p else "", f"{r['ratio']:.2f}", held])
+    # Room left of the longest bar for its value, and ticks that do not crowd on a wide scale.
+    lo, hi = min(0.6, rows[0]["ratio"] * 0.75), max(1.3, min(rows[-1]["ratio"] * 1.08, 3.6))
+    marks = (0.25, 0.35, 0.5, 0.7, 1.0, 1.4, 2.0, 3.0) if hi / lo > 5 else (0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4)
+    ticks = tuple(t for t in marks if lo <= t <= hi)
+    against = "torch.compile" if training else "torch.compile with freezing"
+    header = (["model", "batch size", "torch.compile over eager", "torch.rewrite over eager", "time over torch.compile", "peak GPU memory over torch.compile's"] if training else
+              ["model", "batch size", "torch.compile over eager", "with freezing, over eager", "torch.rewrite over eager", "time over torch.compile", "time over torch.compile with freezing",
+               "peak GPU memory over freezing's"])
+    label_w = max(214, 7 * max(len(r["name"]) for r in rows) + 18)
+    body = C.ratio_bars(items, lo, hi, ticks, label_w=label_w, names=("torch.rewrite faster", "within 3%", against + " faster"), tv_header=header, tv_rows=cells)
+    what = "a training step" if training else "an inference call"
+    cap = (f"Time of {what} under <code>torch.rewrite</code> over the time under <code>{'torch.compile' if training else 'torch.compile</code> with <code>freezing'}</code>, on an H100 with the "
+           f"dashboard's runner and settings; {len(rows)} models, logarithmic scale. Below 1 is faster. Geometric mean {D.geo(r['ratio'] for r in rows):.2f}. "
+           f"Hover or focus a row for the speedups over eager" + ("." if training else "; the table has the comparison with <code>torch.compile</code> as it comes."))
+    return C.figure(f"On a GPU: {title}, {'training' if training else 'inference'}, per model", cap, body)
+
+
+def gpu_since(name, test="eval"):
+    """Where a model stood in the harness's GPU run of the sixth version and where in the seventh's (no cuDNN in either)."""
+    before = [r for r in D.GPU[test] if r["name"] == name]
+    now = [r for r in D.GPU7[test] if r["name"] == name]
+    if not before or not now:
+        return name
+    return f"{name} from {before[0]['ratio']:.2f} to {now[0]['ratio']:.2f}"
+
+
 def fig_micro():
     items = [
         {"name": "chain of 9 ops", "v": 1.52, "tip": [("eager", "18,377 ns"), ("torch.rewrite", "12,059 ns")]},
@@ -167,6 +252,7 @@ GROUPS = [
     ("Memory, weights and one-row products", 14, "1,651", "The fourth version, described below, with two leak fixes and three fixes to the benchmark."),
     ("The variables of the frame, and memory again", 8, "1,151", "The fifth version: frames that have their variables, <code>eval</code> and <code>exec</code> compiled, trace functions, and what the processes hold."),
     ("A list of passes, the frame hook, passes of the user's, CPython 3.14, the GPU", 17, "4,484", "The sixth version: <code>torch.rewrite(fn, passes=[...])</code>, the functions that C code calls, <code>swap</code> and passes in Rust, the port to 3.14, and three fixes found on the GPU."),
+    ("The GPU again: sizes that depend on data, the cost of a region's call, the dashboard's runner", 15, "2,092", "The seventh version: a size that only data decides stays in a graph, a call like the one before is told in the runtime, the perf dashboard's runner measures <code>torch.rewrite</code>, and what its suites found."),
     ("Tests, benchmarks and tools", 4, "510", "The micro benchmarks and the runner for CPython's own test suite."),
 ]
 
@@ -186,8 +272,8 @@ def groups_table():
 
 TITLE = "torch.rewrite: a function as a control-flow graph and a list of rewrites, measured against torch.compile"
 SUB = ("A prototype that compiles the bytecode of a Python function to one control-flow graph, runs it in a Rust VM and hands the tensor work "
-       "to Inductor: what was built over 111 draft PRs, how it compares with torch.compile on TorchBench in accuracy, speed, compile time and "
-       "memory, where it is ahead, where it is behind, and what to do next. Nov 11 to Nov 17, 2026.")
+       "to Inductor: what was built over 126 draft PRs, how it compares with torch.compile on TorchBench and on the perf dashboard's suites in accuracy, speed, compile time and "
+       "memory, where it is ahead, where it is behind, and what to do next. Nov 11 to Nov 18, 2026.")
 
 
 def body():
@@ -214,7 +300,7 @@ def body():
 <p><strong>TL;DR.</strong> <code>torch.rewrite</code> is a prototype of a different front end for PyTorch's compiler. It turns the
 bytecode of a function into one control-flow graph in SSA form, runs that graph in a VM written in Rust, traces on real tensors, and hands the
 tensor work of each path through the graph to AOTAutograd and Inductor, the compiler <code>torch.compile</code> uses behind Dynamo. It exists as
-a stack of 111 draft pull requests against pytorch/pytorch, about 32,600 lines. It was called <code>torch.cfg_compile</code> until the
+a stack of 126 draft pull requests against pytorch/pytorch, about 34,700 lines. It was called <code>torch.cfg_compile</code> until the
 sixth version, which renamed it for what the one who calls it does: hand over a function and a list of rewrites.</p>
 <p>On the TorchBench models that run on this CPU box, it takes <strong>{E['alone_geo']:.2f} of the time of <code>torch.compile</code> for
 inference</strong> ({len(E['names'])} models) and <strong>{T['alone_geo']:.2f} for training</strong> ({len(T['names'])} models), geometric
@@ -228,10 +314,13 @@ the kernels are the same.</p>
 <p>It holds more memory: {held_geo:.2f} times what the process of <code>torch.compile</code> holds at its peak in training and
 {held_geo_eval:.2f} times in inference (geometric means; the last version had single models at four times). It is behind on models whose
 call takes under a few milliseconds, on plain Python in the VM, and in everything that was not built: the optimizer
-step, generators, sizes that only data decides.</p>
-<p><strong>On a GPU</strong> (one H100, new in the sixth version) it takes {gpu_summary("eval")["geo"]:.2f} of the time of
-<code>torch.compile</code> for inference and {gpu_summary("train")["geo"]:.2f} for training: the kernels are the same there, memory is not
-what is slow, and the margin that is left comes from making fewer graphs where a model loops on data.</p>
+step, generators, modules with hooks.</p>
+<p><strong>On a GPU</strong> (one H100, the three suites of the PyTorch perf dashboard at its settings) it takes
+<strong>{suite_summary("inductor")["all"]["geo"]:.2f} of the time of <code>torch.compile</code> for inference</strong> over
+{suite_summary("inductor")["all"]["n"]} models, and {suite_summary("freezing")["all"]["geo"]:.2f} of the time of <code>torch.compile</code>
+with its <code>freezing</code> switch, which is the fair comparison there. It pays for that in memory: {suite_summary("inductor")["all"]["held"]:.2f}
+times the peak GPU memory of <code>torch.compile</code> while a model is warmed up and compiled. The GPU numbers this page had before
+Nov 18 were measured on a build of PyTorch without cuDNN (section 9).</p>
 <p>The sixth version also made what is done to a function one list of passes, to which a user adds passes of their own, in Python or
 in Rust; rewrites the functions that C code calls (constructors, properties, operators, callbacks), through the frame hook Dynamo uses;
 and runs on CPython 3.14 as well as 3.12.</p>
@@ -282,7 +371,7 @@ stack.</p>""")
     A(groups_table())
 
     # ---------------------------------------------------------------- 2
-    A("<h2>2. The path: six versions</h2>")
+    A("<h2>2. The path: seven versions</h2>")
     A(f"""<p>The VM came first and took the first three of the six days: the language, the fidelity to CPython, the measured choice between
 VM and interpreter. The comparison with <code>torch.compile</code> starts with the graph backend, which went through four versions, and a fifth that left speed alone. Each was
 benchmarked on the same {len(E['names'])} models; the numbers of the earlier versions are from their own runs on a shared machine, so read
@@ -311,7 +400,14 @@ that cuts memory to size ({prs(205188, 205195)}).</td><td>{E['alone_geo']:.2f} f
 code calls rewritten through a frame hook; passes of the user's in Python and in Rust; CPython 3.14; the first runs on a GPU and three
 fixes they led to, and one wrong result found on the way ({prs(205237, 205246)}, {prs(205258, 205263)}, {pr(205272)}).</td><td>On the
 CPU as the fifth version, whose numbers the CPU sections of this page show: the sixth changed what runs around the graphs, not the graphs.
-On the GPU {gpu_summary("eval")["geo"]:.2f} for inference and {gpu_summary("train")["geo"]:.2f} for training.</td></tr>
+On the GPU {gpu_summary("eval")["geo"]:.2f} for inference and {gpu_summary("train")["geo"]:.2f} for training, in the stack's
+harness on a build without cuDNN.</td></tr>
+<tr><td>v7<br><span class="muted">Nov 18</span></td><td>The GPU as the perf dashboard measures it. A size that only data decides stays in
+the graph; a call that is like the one before is told so in the runtime, with the dicts of the modules watched; the dashboard's runner
+measures <code>torch.rewrite</code>; and what its suites found: which weights are built in, and what a call through a method of an
+object costs ({prs(205326, 205335)}, {pr(205357)}, {pr(205397)}, {pr(205405)}, {pr(205409)}, {pr(205410)}).</td><td>On the GPU, on the
+dashboard's suites with cuDNN: {suite_summary("inductor")["all"]["geo"]:.2f} of the time of <code>torch.compile</code> for inference,
+{suite_summary("freezing")["all"]["geo"]:.2f} of <code>torch.compile</code> with freezing. The CPU was not measured again.</td></tr>
 </table>""")
     A(f"""<p>The fifth version was about fidelity and memory, not speed, and the ratio between the two compilers did not move
 ({E4['alone_geo']:.2f} and {E['alone_geo']:.2f} for inference). Inference was measured again in all three modes for it, and eager ran
@@ -421,7 +517,7 @@ lets the VM compile whatever those methods call, and compares the outcome of eac
         ("CPython test modules run through the VM", "183", "27,028 tests"),
         ("Test methods compiled", "17,121", "25 left to the interpreter: generators, <code>except*</code>, functions that enter a debugger"),
         ("Outcomes that differ from the interpreter", "5", "it was 21 two versions ago, and 81 with a segmentation fault at the start"),
-        ("Tests of the stack itself", "377", "under CPython 3.12; 363 on a CPU build under 3.14; those of the last four rounds each checked to fail without their change"),
+        ("Tests of the stack itself", "393", "under CPython 3.12; 373 on a CPU build under 3.14 before the last five PRs; those of the last five rounds each checked to fail without their change"),
     ]))
     A(f"""<p>These are from a run on the top of the stack, with the frame hook on: what C code calls under a test method (comparisons, hashes,
 <code>__init__</code>, properties, callbacks) runs in the VM too. None of the five is in the result of a computation: one counts objects
@@ -522,42 +618,102 @@ since has been measured on a GPU.</p>""")
     lj = EV["lennard_jones"]
     # ---------------------------------------------------------------- 9
     GE, GT = gpu_summary("eval"), gpu_summary("train")
+    DS, FS, TS = suite_summary("inductor"), suite_summary("freezing"), suite_summary("inductor", D.SUITES_TRAIN)
     A("<h2>9. On a GPU</h2>")
-    A(f"""<p>Everything above is a CPU. The sixth version was also run on one NVIDIA H100 (CUDA 12.8, Triton 3.8.0), with the same harness: a
-process per model and compiler, one model on the GPU at a time, four CPU threads, the time of a call once the compiler has stopped compiling
-and measuring. <code>torch.compile</code> runs with its defaults, <code>torch.rewrite</code> with the Inductor pass in front of the
-standard list.</p>""")
-    A(C.tiles([
-        ("GPU inference: time over torch.compile", f"{GE['geo']:.2f}", f"{GE['n']} models; {len(GE['ahead'])} ahead, {GE['level']} level, {len(GE['behind'])} behind"),
-        ("GPU training: time over torch.compile", f"{GT['geo']:.2f}", f"{GT['n']} models; {len(GT['ahead'])} ahead, {GT['level']} level, {len(GT['behind'])} behind"),
-        ("Speedup over eager, GPU inference", x(GE['rewrite']), f"torch.compile: {x(GE['compile'])}"),
-        ("Speedup over eager, GPU training", x(GT['rewrite']), f"torch.compile: {x(GT['compile'])}"),
-        ("GPU memory over torch.compile", f"{GE['held']:.2f}", f"inference, peak allocated; training {GT['held']:.2f}"),
-    ]))
-    A(fig_gpu("eval"))
-    A(fig_gpu("train"))
-    A(f"""<p><strong>Reading it.</strong> On a GPU the kernels are Inductor's under both compilers and their launches are most of a
-call, so the two are level wherever they make the same graphs, which is most models. There is no workspace to win with (the CUDA
-allocator already keeps memory) and no page faults to save. What separates the two is how many graphs a call is and what runs between
-and around them.</p>
+    A("""<p class="note"><strong>What changed in this section on Nov 18.</strong> It used to report TorchBench at its default batch sizes,
+measured by the stack's own harness on a build of PyTorch that had been configured without cuDNN: convolutions ran PyTorch's own kernels,
+20 to 30 times slower than cuDNN's. Eager, <code>torch.compile</code> and <code>torch.rewrite</code> ran on that same build, so the ratios
+compared like with like, but for convolutional models they were not of the workload people run. The section now reports the three suites
+of the PyTorch perf dashboard, run by the dashboard's runner at its settings, on a build with cuDNN 9.26. What the harness measured is
+kept below where it explains a change, and says so.</p>""")
+    A(f"""<p>Everything above is a CPU. On one NVIDIA H100 (CUDA 12.8, cuDNN 9.26, Triton 3.8.0) the seventh version was measured the way the
+perf dashboard measures <code>torch.compile</code>: <code>benchmarks/dynamo</code> runs HuggingFace, timm and TorchBench at batch sizes of
+8 to 1024, in bfloat16 for inference and under AMP for training, and times compiled calls against eager ones in turns in one process.
+{pr(205357)} lets that runner measure <code>torch.rewrite</code> (<code>--rewrite</code>) where <code>--backend inductor</code> has it
+measure <code>torch.compile</code>. For inference <code>torch.compile</code> was run as the dashboard runs it and once more with Inductor's
+<code>freezing</code>, which is the comparison to make: <code>torch.rewrite</code> builds weights into its graphs, as freezing does. The
+HuggingFace models that go through <code>generate</code> are left out (<code>--rewrite</code> has no path for them), and the TorchBench
+models that fail under both compilers on this machine.</p>""")
+    tiles = [
+        ("GPU inference: time over torch.compile", f"{DS['all']['geo']:.2f}", f"{DS['all']['n']} models of three suites; {DS['all']['ahead']} ahead, {DS['all']['behind']} behind"),
+        ("GPU inference: time over torch.compile with freezing", f"{FS['all']['geo']:.2f}", f"{FS['all']['n']} models; {FS['all']['ahead']} ahead, {FS['all']['behind']} behind"),
+        ("Speedup over eager, GPU inference", x(DS['all']['rewrite']), f"torch.compile: {x(DS['all']['base'])}; with freezing: {x(FS['all']['base'])}"),
+        ("Peak GPU memory over torch.compile", f"{DS['all']['held']:.2f}", f"while a model is warmed up and compiled; {FS['all']['held']:.2f} over freezing"),
+    ]
+    if "all" in TS:
+        tiles.insert(2, ("GPU training: time over torch.compile", f"{TS['all']['geo']:.2f}", f"{TS['all']['n']} models; {TS['all']['ahead']} ahead, {TS['all']['behind']} behind"))
+    A(C.tiles(tiles))
+    rows = []
+    for title, suite in SUITE_NAMES:
+        d, f = DS[suite], FS[suite]
+        rows.append([title, str(d["n"]), f"{x(d['base'])} / {x(f['base'])} / {x(d['rewrite'])}", f"{d['geo']:.2f} ({len(d['ahead'])} ahead, {len(d['behind'])} behind)",
+                     f"{f['geo']:.2f} ({len(f['ahead'])} ahead, {len(f['behind'])} behind)", f"{d['held']:.2f} / {f['held']:.2f}",
+                     f"{d['compile'][0]:.0f} s / {f['compile'][0]:.0f} s / {d['compile'][1]:.0f} s"])
+    A(C.table(["inference", "models", "speedup over eager: torch.compile / with freezing / torch.rewrite", "time of torch.rewrite over torch.compile",
+               "over torch.compile with freezing", "peak GPU memory over torch.compile / over freezing", "compile time: torch.compile / with freezing / torch.rewrite"], rows))
+    if "all" in TS:
+        rows = []
+        for title, suite in SUITE_NAMES:
+            if suite in TS:
+                t = TS[suite]
+                rows.append([title, str(t["n"]), f"{x(t['base'])} / {x(t['rewrite'])}", f"{t['geo']:.2f} ({len(t['ahead'])} ahead, {len(t['behind'])} behind)", f"{t['held']:.2f}",
+                             f"{t['compile'][0]:.0f} s / {t['compile'][1]:.0f} s"])
+        A(C.table(["training", "models", "speedup over eager: torch.compile / torch.rewrite", "time of torch.rewrite over torch.compile",
+                   "peak GPU memory over torch.compile", "compile time: torch.compile / torch.rewrite"], rows))
+    else:
+        A("<p>The training suites (<code>--training --amp</code>) were running when this page was made.</p>")
+    for title, suite in SUITE_NAMES:
+        A(fig_suite(suite, title))
+    if "all" in TS:
+        for title, suite in SUITE_NAMES:
+            if suite in TS:
+                A(fig_suite(suite, title, training=True))
+    hf, timm, tb = (FS[s] for _, s in SUITE_NAMES)
+    A(f"""<p><strong>Reading it.</strong> With weights as constants of the graph, Inductor folds batch norms into convolutions and makes
+one product of the three projections of an attention layer, for <code>torch.rewrite</code> as for <code>torch.compile</code> with freezing:
+the two then run nearly the same kernels, and timm, which is convolutions at large batches, is level ({timm['geo']:.2f}). What margin there
+is comes from what runs around the kernels and from how many graphs a call is.</p>
 <ul>
-<li><strong>Ahead</strong> (inference): {", ".join(f"{r['name']} {r['ratio']:.2f}" for r in GE['ahead'][:6])}. The largest margins are
-generation loops (moondream, hf_T5_generate, cm3leon_generate): the loop and its bookkeeping stay instructions of the VM, where Dynamo
-ends a graph at each step that depends on data.</li>
-<li><strong>Behind</strong> (inference): {", ".join(f"{r['name']} {r['ratio']:.2f}" for r in GE['behind'][:6])}. soft_actor_critic is
-two graphs where Dynamo makes one, in a call of a third of a millisecond, where what a region does before its graph runs is a tenth of the
-call. basic_gnn_gcn calls <code>nonzero</code>; a region that contains it is given up as a whole, so more of the model runs kernel by
-kernel than under Dynamo, which cuts the graph at that one call. hf_Bart is nine graphs to Dynamo's six, one per encoder layer, because
-the loop over the layers is not unrolled. The others are within what two runs of the same build differ by.</li>
-<li><strong>Training</strong>: ahead {", ".join(f"{r['name']} {r['ratio']:.2f}" for r in GT['ahead'][:5])}; behind
-{", ".join(f"{r['name']} {r['ratio']:.2f}" for r in GT['behind'][:4])}. Why hf_BigBird trains in half the time was not looked into.</li>
-<li><strong>Memory</strong>: {GE['held']:.2f} times what <code>torch.compile</code> allocates on the GPU for inference, {GT['held']:.2f} for
-training. A graph with weights built in holds Inductor's copy of them next to the ones the module still has, which for dlrm and llama is the
-model a second time.</li>
-<li><strong>Noise</strong>: convolutional models vary by up to 15% between two runs of the same compiler on this machine (alexnet under
-<code>torch.compile</code>: 39 ms a call in one run, 16 ms in the next), so a few percent either way on such a model is not a finding.</li>
+<li><strong>Ahead of torch.compile with freezing</strong>: {listed(tb['ahead'], 4)} on TorchBench; {listed(hf['ahead'], 4)} on HuggingFace.
+basic_gnn_gcn is one graph where Dynamo makes six, because a size that only data decides stays in the graph ({pr(205326)}); the generation
+loop of cm3leon_generate stays instructions of the VM, where Dynamo ends a graph at each step that depends on data.</li>
+<li><strong>Against torch.compile as the dashboard runs it</strong>, without freezing: {DS['all']['geo']:.2f} of its time over {DS['all']['n']} models;
+ahead on {DS['all']['ahead']}, behind on {DS['all']['behind']} ({listed(DS['torchbench']['behind'], 3)}).</li>
+<li><strong>Behind</strong>: {listed(tb['behind'], 4)} on TorchBench, {listed(hf['behind'], 2)} on HuggingFace, {listed(timm['behind'], 2)} on timm.
+opacus_cifar10 puts a hook on every layer; a region refuses a module with hooks, so the model runs at the speed of eager, where
+<code>torch.compile</code> compiles through them. The pyhpc models are calls of under a millisecond that the runner times right after an
+eager call of the same model, which costs <code>torch.rewrite</code> more than <code>torch.compile</code>: 0.099 ms against 0.084 ms for
+pyhpc_equation_of_state, and 0.069 ms for both when the calls are back to back. Why AllenaiLongformerBase is behind was not looked into.</li>
+<li><strong>Memory is the price</strong>: the runner records the most that was allocated on the GPU while a model is warmed up and
+compiled, and <code>torch.rewrite</code> has {DS['huggingface']['held']:.2f} times what <code>torch.compile</code> has there on HuggingFace,
+{DS['timm_models']['held']:.2f} on timm and {DS['torchbench']['held']:.2f} on TorchBench. The first calls of a rewritten function run the
+model kernel by kernel on real tensors, so its peak is never under eager's, where <code>torch.compile</code> never runs the model that way;
+and a weight that is built in is held a second time (XGLM: 6.0 GB, where it was 4.9 GB before the matrices of its products were built in).</li>
+<li><strong>Compile time</strong>: {DS['huggingface']['compile'][1]:.0f} s against {DS['huggingface']['compile'][0]:.0f} s on HuggingFace,
+{DS['timm_models']['compile'][1]:.0f} s against {DS['timm_models']['compile'][0]:.0f} s on timm, {DS['torchbench']['compile'][1]:.0f} s
+against {DS['torchbench']['compile'][0]:.0f} s on TorchBench (geometric means, as the runner reports them).</li>
 </ul>
-<p><strong>The path to these numbers.</strong> The first run of all models on the GPU, on the fifth version, had
+<p><strong>What the dashboard's suites found.</strong> The first run of the suites had <code>torch.rewrite</code> behind
+<code>torch.compile</code> with freezing on HuggingFace and timm, and behind on every model whose call is short. Four causes, each in
+<code>torch.rewrite</code> and none in Inductor:</p>
+<ol>
+<li><strong>A method of an object as what is called.</strong> The runner calls a model through <code>runner.forward_pass</code>, a method
+of an object that holds its parsed command line, 127 attributes. The pass that tells a call that is like the one before in the runtime
+did not know a bound method or an object with attributes, so every call described that object in Python: 52 of the 96 microseconds of a
+call of pyhpc_equation_of_state ({pr(205405)}).</li>
+<li><strong>A loss module in training.</strong> Weights were built in when no module of the call was in training, and the timm runner
+holds a <code>CrossEntropyLoss</code>, which is in training like any module nobody called <code>eval()</code> on: no timm model had its
+weights built in. A module in training now keeps only its own weights as inputs ({pr(205409)}): tf_efficientnet_b0 went from 5.3 ms to
+4.0 ms a call.</li>
+<li><strong>The matrix of a product.</strong> A matrix that a graph only multiplies with was left as an input, to not hold it twice.
+On a GPU, Inductor fuses the products of one input only if their matrices are constants; they are built in there now ({pr(205410)}), at
+the price in memory above.</li>
+<li><strong>What stands in during a trace.</strong> maml failed: a function that stands in for <code>torch.autograd.grad</code> while
+a region is traced was handed back by a region and called ({pr(205397)}).</li>
+</ol>""")
+    A(f"""<p><strong>Before the dashboard's runner: the stack's harness, on the build without cuDNN.</strong> The ratios in the rest of this
+section are of TorchBench at its default batch sizes in float32, each compiler in a process of its own, on that build. They are kept
+because they are what each change was measured by. The first run of all models on the GPU, on the fifth version, had
 <code>torch.rewrite</code> at 1.10 times <code>torch.compile</code> for inference. Profiling single models found three causes, none of
 them in a kernel, and each became a PR:</p>
 <ol>
@@ -574,8 +730,30 @@ module out of its dict, described them all for the key of the call, and checked 
 microseconds of a call of hf_DistilBert. One pass in Rust now checks that nothing changed since the tensors were last looked at
 ({pr(205258)}): 118 microseconds.</li>
 </ol>
-<p>Two GNN models that were five to six times slower than under <code>torch.compile</code> in the first run are level in this one;
-which change of this version did that was not isolated.</p>""")
+<p>That was the sixth version: level for inference in that harness ({gpu_summary("eval")["geo"]:.2f}). What kept it level was
+looked for model by model, and became the first ten PRs of the seventh version:</p>
+<ol>
+<li><strong>A size that only data decides.</strong> A region with <code>nonzero</code> or a mask as an index in it was traced, because
+the trace gives such a size a symbol, and then given up as a whole: Inductor was handed the graph without the ShapeEnv the symbol
+belongs to. The trace is now made again in one the backend shares ({pr(205326)}): {gpu_since('basic_gnn_gcn')}, one graph where Dynamo
+makes six, and {gpu_since('hf_Reformer')}.</li>
+<li><strong>What a compiled call costs before its graph runs.</strong> A region made the key of every call by walking, in Python, what it
+was handed, after a walk over the dicts of every module to see that none had changed: 83 microseconds for a ResNet-50 with a backend
+that computes nothing. The dicts are now watched, so one number says that none changed ({pr(205328)}); the places of the tensors are not
+looked at while it says so ({pr(205329)}); and a call that is like the one before is told so in one pass in the runtime, which returns
+its key and inputs ({prs(205330, 205332)}): 21 microseconds. {gpu_since('hf_Bart')}, {gpu_since('lennard_jones')}.</li>
+<li><strong>Objects made again by their <code>__init__</code>.</strong> What a model returns that a region made (a
+<code>ModelOutput</code>, a distribution) was made again on every call by its class, in the interpreter. It is a new object with the same
+attributes now ({pr(205327)}).</li>
+<li><strong>A clock that does not wait for the GPU.</strong> A function is left to the interpreter when it is faster there, but a kernel
+on a GPU is started and not waited for: a graph that waits somewhere inside looked slower than kernels that were only started. A call
+that is measured now ends when the GPU is idle ({pr(205334)}).</li>
+<li><strong>The same program in every mode.</strong> Dynamo turns the validation of the arguments of distributions off for its process;
+the harness measured eager and <code>torch.rewrite</code> with it on. It is off in all three now ({pr(205335)}):
+{gpu_since('soft_actor_critic')}.</li>
+</ol>
+<p>In that harness the seventh version took {D.geo(r["ratio"] for r in D.GPU7["eval"]):.2f} of the time of <code>torch.compile</code> for
+inference over {len(D.GPU7["eval"])} models, where the sixth took {gpu_summary("eval")["geo"]:.2f}.</p>""")
 
     # ---------------------------------------------------------------- 10
     A("<h2>10. One list of passes, and passes of your own</h2>")
@@ -663,10 +841,10 @@ arguments in Python.</li>
 <li><strong>Plain Python in the VM</strong>: three to four times slower than CPython when forced; hidden by handing it back.</li>
 <li><strong>The optimizer step is not compiled</strong>; <code>torch.compile</code> compiles it.</li>
 <li><strong>Guards</strong>: reads made by interpreted callees from objects that are not inputs are not checked.</li>
-<li><strong>Not built</strong>: generators, coroutines, <code>except*</code>; sizes that only data decides; Python other than 3.12.</li>
-<li><strong>On a GPU</strong>: level on most models and behind on a few (section 9), where there is no margin from memory to make up
-for more graphs or more Python around them.</li>
-<li><strong>Maturity</strong>: a week old; 106 of the 111 PRs have had neither review nor CI.</li>
+<li><strong>Not built</strong>: generators, coroutines, <code>except*</code>; regions over modules with hooks; Python other than 3.12 and 3.14.</li>
+<li><strong>On a GPU</strong> (section 9): {suite_summary("inductor")["all"]["held"]:.2f} times the peak memory of <code>torch.compile</code>;
+a model whose modules have hooks runs at the speed of eager (opacus_cifar10); calls of under a tenth of a millisecond.</li>
+<li><strong>Maturity</strong>: a week old; 121 of the 126 PRs have had neither review nor CI.</li>
 </ul></div>
 </div>""")
 
@@ -737,12 +915,16 @@ does, and removing it takes values out of what regions are handed.</li>
 <li><strong>Keep the loss region of transformer models compiled.</strong> Name a module that has no tensors by its class and attribute
 values instead of its identity, so that a loss built on every call is one variant and not one per call. The leak fix retires that region
 instead, which is safe and gives up a little speed on every HuggingFace training step.</li>
-<li><strong>Regions around what a trace cannot hold.</strong> A region whose trace fails on one call inside it (<code>nonzero</code> in
-basic_gnn_gcn) is given up as a whole, where the one instruction could be left to the VM and the rest kept; and a loop over the layers of
-a <code>ModuleList</code> is not unrolled, so hf_Bart is nine graphs. On a GPU both cost what they would not on a CPU.</li>
-<li><strong>Know that a module has not changed without looking.</strong> Entering a region still touches every module and every tensor
-once (about 40 microseconds for a hundred tensors). Dict watchers for the modules and a hook where a tensor is written in place would make
-that a flag.</li>
+<li><strong>Modules with hooks, and branches on data.</strong> A region refuses a module with hooks, and with real convolutions that is
+the largest gap there is: opacus_cifar10 runs at the speed of eager where <code>torch.compile</code> gets 2.8 times. Lifting the refusal
+is not enough (tried): the results stay right, a hook that changes an output is traced, but a hook that appends to a list is run at the
+trace and never again. A branch on what a tensor holds still ends a region (hf_Bart checks every layer's output for infinities), and a
+loop over the layers of a <code>ModuleList</code> is not unrolled.</li>
+<li><strong>Enter a region from a cold cache.</strong> The dicts of the modules tell of their changes now, and a call that is like the
+one before is told so in one pass in the runtime. What is left shows on calls of under a tenth of a millisecond right after an eager call
+of the same model, which is how the dashboard's runner times: a look at every tensor of the modules a region is handed, about 230
+nanoseconds a tensor on memory that was pushed out of the cache. A region also cannot hold a <code>with</code> whose manager a
+<code>functools.partial</code> makes (the runner's <code>autocast</code>), so the VM runs it around the graph.</li>
 <li><strong>Look for more kernels that do not use the machine.</strong> With memory and weights handled, what is left on the CPU is in
 the kernels: BLAS for transformers on batches, MKLDNN for convolutions. The one-row product was found by asking, per kernel, how many
 cores it used. A profile of every model in that form would find the others, if there are any.</li>
@@ -775,7 +957,7 @@ python benchmarks/rewrite/torchbench.py --torchbench &lt;pytorch/benchmark check
     --results results.jsonl</code></pre>
 <p>The result files behind the charts and the per-model tables are in
 <a href="https://github.com/bobrenjc93/explanations/tree/main/cfg-compile/results">cfg-compile/results</a> (one JSON line per model,
-test and compiler; <code>final_r22.jsonl</code> is the final CPU run and <code>gpu_r23.jsonl</code> the GPU run, the others are the earlier versions), and the generator of this page
+test and compiler; <code>final_r22.jsonl</code> is the final CPU run; <code>suites_r25c/</code> has what the dashboard's runner wrote on the GPU, one CSV per suite and compiler; <code>gpu_r24.jsonl</code> and <code>gpu_r23.jsonl</code> are the stack's harness on the GPU, on a build without cuDNN; the others are the earlier versions), and the generator of this page
 in <a href="https://github.com/bobrenjc93/explanations/tree/main/cfg-compile/code">cfg-compile/code</a>. Numbers quoted from
 single-model runs (section 4, the micro benchmarks, the conformance run) are from the descriptions of the PRs that made each change and
 from the report in the top PR. The top of the stack is {pr(204763)}.</p>""")

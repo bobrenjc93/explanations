@@ -21,6 +21,8 @@ allocated on the GPU (`torch.cuda.max_memory_allocated`).
 
 | file | what it is |
 |---|---|
+| `suites_r25c/` | v7 on one H100, on a build with cuDNN 9.26: what `benchmarks/dynamo/{huggingface,timm_models,torchbench}.py --performance --cold-start-latency --inference --bfloat16 --disable-cudagraphs` wrote under `--backend inductor` (`inductor_*.csv`), `--backend inductor --freezing` (`freezing_*.csv`) and `--rewrite` (`rewrite_*.csv`); `suites_r25c_train/` is `--training --amp` |
+| `gpu_r24.jsonl` | v7 in the stack's harness on one H100, inference only (its training rows are v6's), on a build WITHOUT cuDNN, like `gpu_r23.jsonl` and `gpu_first.jsonl` |
 | `gpu_r23.jsonl` | v6 on one H100: inference (59 models) and training (47), each (model, compiler) in a process of its own, one at a time; the rows of hf_Longformer and hf_Reformer are from a rerun on the build with the iterator fix |
 | `gpu_first.jsonl` | the first GPU run, on the build of v5, 39 models of inference before it was stopped; what the GPU section's "before" is |
 | `final_r22.jsonl` | the CPU run (v5 on the page; v6 was not measured again on the CPU with the machine to itself, so the CPU sections keep these rows): the top of the stack, nine workers for inference and five for training under the memory guard; inference measured again in all three modes, so that every row has its peak memory, training rows of eager and `torch.compile` taken from the run of v4 |
