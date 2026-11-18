@@ -1,0 +1,241 @@
+{
+ "models": {
+  "BertForMaskedLM": {
+   "before the fix": {
+    "torch.compile": {
+     "speedup": 1.573205,
+     "ms": 29.673177
+    },
+    "torch.rewrite": {
+     "speedup": 1.677725,
+     "ms": 28.377015
+    }
+   },
+   "with the fix": {
+    "torch.compile": {
+     "speedup": 1.62583,
+     "ms": 29.121364
+    },
+    "torch.rewrite": {
+     "speedup": 1.661114,
+     "ms": 28.156187
+    }
+   },
+   "second pair, chunks kept for torch.compile too": {
+    "torch.compile": {
+     "speedup": 1.693877,
+     "ms": 27.621189
+    },
+    "torch.rewrite": {
+     "speedup": 1.671651,
+     "ms": 28.250176
+    }
+   }
+  },
+  "ElectraForCausalLM": {
+   "before the fix": {
+    "torch.compile": {
+     "speedup": 1.851406,
+     "ms": 21.138989
+    },
+    "torch.rewrite": {
+     "speedup": 2.118337,
+     "ms": 19.158917
+    }
+   },
+   "with the fix": {
+    "torch.compile": {
+     "speedup": 1.847101,
+     "ms": 21.107746
+    },
+    "torch.rewrite": {
+     "speedup": 2.064071,
+     "ms": 18.960707
+    }
+   },
+   "second pair, chunks kept for torch.compile too": {
+    "torch.compile": {
+     "speedup": 2.097065,
+     "ms": 18.525715
+    },
+    "torch.rewrite": {
+     "speedup": 2.180033,
+     "ms": 19.029155
+    }
+   }
+  },
+  "RobertaForCausalLM": {
+   "before the fix": {
+    "torch.compile": {
+     "speedup": 1.90496,
+     "ms": 32.293449
+    },
+    "torch.rewrite": {
+     "speedup": 1.983896,
+     "ms": 31.456507
+    }
+   },
+   "with the fix": {
+    "torch.compile": {
+     "speedup": 1.921483,
+     "ms": 32.235976
+    },
+    "torch.rewrite": {
+     "speedup": 1.986977,
+     "ms": 31.414798
+    }
+   },
+   "second pair, chunks kept for torch.compile too": {
+    "torch.compile": {
+     "speedup": 1.997119,
+     "ms": 31.336548
+    },
+    "torch.rewrite": {
+     "speedup": 1.990867,
+     "ms": 31.444836
+    }
+   }
+  },
+  "nfnet_l0": {
+   "before the fix": {
+    "torch.compile": {
+     "speedup": 1.654503,
+     "ms": 36.239143
+    },
+    "torch.rewrite": {
+     "speedup": 1.633313,
+     "ms": 36.755132
+    }
+   },
+   "with the fix": {
+    "torch.compile": {
+     "speedup": 1.65697,
+     "ms": 36.089203
+    },
+    "torch.rewrite": {
+     "speedup": 1.633104,
+     "ms": 36.601233
+    }
+   },
+   "second pair, chunks kept for torch.compile too": {
+    "torch.compile": {
+     "speedup": 1.639207,
+     "ms": 36.871457
+    },
+    "torch.rewrite": {
+     "speedup": 1.637427,
+     "ms": 36.784736
+    }
+   }
+  },
+  "repvgg_a2": {
+   "before the fix": {
+    "torch.compile": {
+     "speedup": 2.167079,
+     "ms": 19.788492
+    },
+    "torch.rewrite": {
+     "speedup": 1.909507,
+     "ms": 22.334866
+    }
+   },
+   "with the fix": {
+    "torch.compile": {
+     "speedup": 2.215212,
+     "ms": 19.253948
+    },
+    "torch.rewrite": {
+     "speedup": 2.231799,
+     "ms": 19.048905
+    }
+   }
+  },
+  "tf_efficientnet_b0": {
+   "before the fix": {
+    "torch.compile": {
+     "speedup": 2.223511,
+     "ms": 24.299881
+    },
+    "torch.rewrite": {
+     "speedup": 1.782103,
+     "ms": 30.441375
+    }
+   },
+   "with the fix": {
+    "torch.compile": {
+     "speedup": 2.187288,
+     "ms": 25.36562
+    },
+    "torch.rewrite": {
+     "speedup": 2.260994,
+     "ms": 23.921432
+    }
+   }
+  }
+ },
+ "suites": {
+  "training huggingface vs inductor": {
+   "models": 26,
+   "ratio": 1.002128020181674,
+   "ahead": 5,
+   "behind": 6
+  },
+  "inference huggingface vs inductor": {
+   "models": 26,
+   "ratio": 0.9037514088360139,
+   "ahead": 20,
+   "behind": 0
+  },
+  "inference huggingface vs freezing": {
+   "models": 26,
+   "ratio": 0.960276373135348,
+   "ahead": 17,
+   "behind": 1
+  },
+  "training huggingface before": {
+   "ratio": 1.002156062731063
+  },
+  "training timm_models vs inductor": {
+   "models": 18,
+   "ratio": 0.9965145934723749,
+   "ahead": 2,
+   "behind": 1
+  },
+  "inference timm_models vs inductor": {
+   "models": 18,
+   "ratio": 0.9379898139088075,
+   "ahead": 11,
+   "behind": 0
+  },
+  "inference timm_models vs freezing": {
+   "models": 18,
+   "ratio": 0.9906975018998264,
+   "ahead": 2,
+   "behind": 0
+  },
+  "training timm_models before": {
+   "ratio": 1.0109525048346453
+  },
+  "training torchbench vs inductor": {
+   "models": 31,
+   "ratio": 0.9709838365194514,
+   "ahead": 10,
+   "behind": 6
+  },
+  "inference torchbench vs inductor": {
+   "models": 42,
+   "ratio": 0.9106089956131709,
+   "ahead": 33,
+   "behind": 2
+  },
+  "inference torchbench vs freezing": {
+   "models": 42,
+   "ratio": 0.9573165835480414,
+   "ahead": 22,
+   "behind": 4
+  },
+  "training torchbench before": {
+   "ratio": 0.9648709073658029
+  }
+ }
+}

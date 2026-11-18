@@ -450,10 +450,11 @@ What <code>torch.rewrite</code> did not have when the suites were first run was 
 (<a href="https://github.com/pytorch/pytorch/pull/205437">#205437</a>), a step of deit_tiny takes 12.4 ms, as under <code>torch.compile</code> in the same process, where it took 14.3 ms.
 Getting there costs more: a training step is called some hundred times while its levels of calls are measured one after another,
 28 s of warm-up where <code>torch.compile</code> compiles for 6 s (geometric means).</li>
-<li><strong>An accident of the interpreter had two models a quarter behind.</strong> CPython keeps the frames of a thread in chunks of
-16 KB and unmaps a chunk the moment the frame at its start returns. The code Inductor generates for a graph has one large frame and
+<li><strong>An accident of the interpreter had two models a quarter behind</strong> (<a href="../frame-stack-chunks/">how it was
+found is a page of its own</a>). CPython 3.11 and 3.12 keep the frames of a thread in chunks of 16 KB and unmap a chunk the moment the
+frame at its start returns; 3.13 and 3.14 have kept one for reuse since March 2026, and the perf dashboard's jobs run 3.11. The code Inductor generates for a graph has one large frame and
 launches the graph's kernels from it. Where the runner calls tf_efficientnet_b0 for training under <code>torch.rewrite</code>, that
-frame ended 112 bytes short of the end of a chunk, and each of the 452 kernel launches of a step mapped a chunk and unmapped it again:
+frame ended 128 bytes short of the end of a chunk, and each of the 452 calls it makes in a step mapped a chunk and unmapped it again:
 30.5 ms a step, and 23.3 ms with one more Python frame anywhere above. The runtime now keeps the chunks that are freed
 (<a href="https://github.com/pytorch/pytorch/pull/205502">#205502</a>), and the numbers here are of that build. It is not <code>torch.rewrite</code>'s accident alone. The timed loops ask
 for these many chunks a step: under <code>torch.rewrite</code>, which now has them at hand, tf_efficientnet_b0 (452), repvgg_a2 (358)

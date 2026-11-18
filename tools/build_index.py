@@ -31,6 +31,7 @@ TAGS = {
     "calculator-generalize": ["transformers", "experiment", "generalization", "length generalization"],
     "calculator-scaling": ["transformers", "experiment", "scaling laws"],
     "cfg-compile": ["PyTorch", "compilers", "torch.compile", "benchmarks"],
+    "frame-stack-chunks": ["PyTorch", "CPython", "benchmarks", "debugging"],
 }
 
 
