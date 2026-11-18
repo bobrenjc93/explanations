@@ -255,7 +255,7 @@ GROUPS = [
     ("Memory, weights and one-row products", 14, "1,651", "The fourth version, described below, with two leak fixes and three fixes to the benchmark."),
     ("The variables of the frame, and memory again", 8, "1,151", "The fifth version: frames that have their variables, <code>eval</code> and <code>exec</code> compiled, trace functions, and what the processes hold."),
     ("A list of passes, the frame hook, passes of the user's, CPython 3.14, the GPU", 17, "4,484", "The sixth version: <code>torch.rewrite(fn, passes=[...])</code>, the functions that C code calls, <code>swap</code> and passes in Rust, the port to 3.14, and three fixes found on the GPU."),
-    ("The GPU again: sizes that depend on data, the cost of a region's call, the dashboard's runner", 18, "2,374", "The seventh version: a size that only data decides stays in a graph, a call like the one before is told in the runtime, the perf dashboard's runner measures <code>torch.rewrite</code>, and what its suites found, the update of an optimizer and the chunks of the interpreter's frame stack among it."),
+    ("The GPU again: sizes that depend on data, the cost of a region's call, the dashboard's runner", 21, "3,114", "The seventh version: a size that only data decides stays in a graph, a call like the one before is told in the runtime, the perf dashboard's runner measures <code>torch.rewrite</code>, and what its suites found, the update of an optimizer and the chunks of the interpreter's frame stack among it."),
     ("Tests, benchmarks and tools", 4, "510", "The micro benchmarks and the runner for CPython's own test suite."),
 ]
 
@@ -275,7 +275,7 @@ def groups_table():
 
 TITLE = "torch.rewrite: a function as a control-flow graph and a list of rewrites, measured against torch.compile"
 SUB = ("A prototype that compiles the bytecode of a Python function to one control-flow graph, runs it in a Rust VM and hands the tensor work "
-       "to Inductor: what was built over 129 draft PRs, how it compares with torch.compile on TorchBench and on the perf dashboard's suites in accuracy, speed, compile time and "
+       "to Inductor: what was built over 132 draft PRs, how it compares with torch.compile on TorchBench and on the perf dashboard's suites in accuracy, speed, compile time and "
        "memory, where it is ahead, where it is behind, and what to do next. Nov 11 to Nov 18, 2026.")
 
 
@@ -303,7 +303,7 @@ def body():
 <p><strong>TL;DR.</strong> <code>torch.rewrite</code> is a prototype of a different front end for PyTorch's compiler. It turns the
 bytecode of a function into one control-flow graph in SSA form, runs that graph in a VM written in Rust, traces on real tensors, and hands the
 tensor work of each path through the graph to AOTAutograd and Inductor, the compiler <code>torch.compile</code> uses behind Dynamo. It exists as
-a stack of 129 draft pull requests against pytorch/pytorch, about 35,000 lines. It was called <code>torch.cfg_compile</code> until the
+a stack of 132 draft pull requests against pytorch/pytorch, about 35,800 lines. It was called <code>torch.cfg_compile</code> until the
 sixth version, which renamed it for what the one who calls it does: hand over a function and a list of rewrites.</p>
 <p>On the TorchBench models that run on this CPU box, it takes <strong>{E['alone_geo']:.2f} of the time of <code>torch.compile</code> for
 inference</strong> ({len(E['names'])} models) and <strong>{T['alone_geo']:.2f} for training</strong> ({len(T['names'])} models), geometric
@@ -524,7 +524,7 @@ lets the VM compile whatever those methods call, and compares the outcome of eac
         ("CPython test modules run through the VM", "183", "27,028 tests"),
         ("Test methods compiled", "17,121", "25 left to the interpreter: generators, <code>except*</code>, functions that enter a debugger"),
         ("Outcomes that differ from the interpreter", "5", "it was 21 two versions ago, and 81 with a segmentation fault at the start"),
-        ("Tests of the stack itself", "397", "under CPython 3.12; 373 on a CPU build under 3.14 before the last eight PRs; those of the last five rounds each checked to fail without their change"),
+        ("Tests of the stack itself", "403", "under CPython 3.12; 373 on a CPU build under 3.14 before the last eleven PRs; those of the last five rounds each checked to fail without their change"),
     ]))
     A(f"""<p>These are from a run on the top of the stack, with the frame hook on: what C code calls under a test method (comparisons, hashes,
 <code>__init__</code>, properties, callbacks) runs in the VM too. None of the five is in the result of a computation: one counts objects
@@ -813,6 +813,35 @@ together with a list of rewrites, and each of them can be looked at.</p>
 
 @torch.rewrite(passes=[torch.rewrite.inductor, *torch.rewrite.canonical])   # graphs by AOTAutograd and Inductor
 def forward(model, x): ...</code></pre>
+<p><strong>Two lists: <code>torch.vm</code>.</strong> The one list held two kinds of pass under names that did not say which is which:
+<code>inline</code> and <code>unroll</code> rewrite the control-flow graph of the whole function once, before it runs, and
+<code>fold</code> rewrites one basic block after its first runs were watched. <code>torch.vm</code> is the same engine with the two kinds
+in two lists, each pass made by a function, the defaults under a name, and a preset as keyword arguments to unpack
+({pr(205558)}, {pr(205559)}, {pr(205560)}):</p>
+<pre><code>@torch.vm                       # the two default lists
+def forward(model, x): ...
+
+# the same, spelled out: inlining_pass(), loop_unrolling_pass(), module_shortcuts_pass(),
+# and resolve_dispatch_pass(), tensor_accessors_pass(), method_calls_pass(), fold_pass(), dce_pass()
+@torch.vm(
+    cfg_passes=torch.vm.DefaultCFGPasses,
+    block_passes=torch.vm.DefaultBlockPasses,
+)
+def forward(model, x): ...
+
+@torch.vm(**torch.vm.FAST)      # the defaults, with Inductor for the tensor work
+def forward(model, x): ...
+
+# a pass with a setting: loops of up to 16 iterations are unrolled, where the default is 8
+torch.vm.loop_unrolling_pass(16)
+# the keyword arguments for the defaults with that pass set
+passes = torch.vm.configure(loop_unrolling_pass=16)
+
+@torch.vm(**passes)
+def forward(model, x): ...</code></pre>
+<p>A pass in the wrong list is an error that says where it goes, and so is unrolling in front of inlining: a list reads as what is
+done. <code>torch.rewrite</code> is unchanged underneath, the dashboard runner's <code>--rewrite</code> is
+<code>torch.vm(fn, **torch.vm.FAST)</code>, and the rest of this page still writes the first name.</p>
 <p><strong>A kernel in place of operations.</strong> A pass sees which ATen operator each instruction was seen to be, so
 <code>x.pow(2)</code>, <code>x ** 2</code> and <code>torch.pow(x, 2)</code> are the same thing to it.
 <code>torch.rewrite.swap(ops, kernel)</code> finds a run of operators in a block, puts one call of the kernel in its place, and for the
@@ -891,7 +920,7 @@ arguments in Python.</li>
 <li><strong>Not built</strong>: generators, coroutines, <code>except*</code>; regions over modules with hooks; Python other than 3.12 and 3.14.</li>
 <li><strong>On a GPU</strong> (section 9): {suite_summary("inductor")["all"]["held"]:.2f} times the peak memory of <code>torch.compile</code>;
 a model whose modules have hooks runs at the speed of eager (opacus_cifar10); calls of under a tenth of a millisecond.</li>
-<li><strong>Maturity</strong>: a week old; 124 of the 129 PRs have had neither review nor CI.</li>
+<li><strong>Maturity</strong>: a week old; 127 of the 132 PRs have had neither review nor CI.</li>
 </ul></div>
 </div>""")
 
