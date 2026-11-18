@@ -143,5 +143,8 @@ def suites(folder):
 
 
 SUITES = suites("suites_r25c")
-SUITES_TRAIN = suites("suites_r25c_train")
+# Model by model, torch.compile and torch.rewrite one right after the other (the machine is shared, and suites run
+# hours apart had other work on the GPU for parts of them): TorchBench for inference, and the three suites for training.
+SUITES_PAIRED = suites("suites_r25d")
+SUITES_TRAIN = suites("suites_r25d_train")
 GPU_FIRST = gpu("gpu_first.jsonl")
