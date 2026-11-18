@@ -474,6 +474,15 @@ learning rate is a float in the key of that region, so one on a schedule would h
 each come with other numbers gets no graph (<a href="https://github.com/pytorch/pytorch/pull/205436">#205436</a>). Under Adam the weights are no longer bit for bit the interpreter's, as they
 are not under <code>torch.compile</code>: the corrections for the first steps are float32 in the graph.</li>
 </ol>
+<p><strong>What the stack does to <code>torch.compile</code>.</strong> The first PR of the stack adds a check to the dispatcher,
+which every operator call of every program passes. The perf dashboard's own workflow (the three suites, inference in bfloat16 and training
+under AMP, thirteen configurations, on H100 runners) was run on the commit the stack starts from, twice, and on the top of the stack. Its
+build has no Rust runtime, so it measures <code>torch.compile</code>, not <code>torch.rewrite</code>. Over 681 inference and 423 training
+model runs the speedup over eager is within 0.3% of the starting commit's in every comparison. Compiled latency on the stack is 0.6% and
+0.9% above the starting commit's first run and 0.5% and 0.1% above its second, and the second run is itself 0.2% and 0.8% above the
+first: within what two runs of one commit differ by. The one place where the stack is slower than both is HuggingFace for inference
+(0.8% and 1.5%), where the two runs of the starting commit differ by 0.7% the other way; two runs cannot tell whether that is the
+dispatcher.</p>
 <p><strong>Before the dashboard's runner: the stack's harness, on the build without cuDNN.</strong> The ratios in the rest of this
 section are of TorchBench at its default batch sizes in float32, each compiler in a process of its own, on that build. They are kept
 because they are what each change was measured by. The first run of all models on the GPU, on the fifth version, had
