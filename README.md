@@ -15,6 +15,7 @@ the favicon `<link>` tags using `../`), commit it, then run `python3 tools/build
 
 ## Index
 
+- Nov 19, 2026: [One model, two compilers, the same agent for three hours each](https://bobrenjc93.github.io/explanations/two-compilers-one-model/)
 - Nov 18, 2026: [A quarter of a training step, lost to one Python frame: the chunks of CPython's frame stack under a compiled graph](https://bobrenjc93.github.io/explanations/frame-stack-chunks/)
 - Nov 16, 2026: [Scaling laws for a calculator: parameters, data, and where it stops](https://bobrenjc93.github.io/explanations/calculator-scaling/)
 - Nov 16, 2026: [torch.vm: a function as a control-flow graph and a list of rewrites, measured against torch.compile](https://bobrenjc93.github.io/explanations/cfg-compile/)
