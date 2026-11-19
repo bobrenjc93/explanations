@@ -26,7 +26,7 @@ Everything here is as it ran, on one machine with one H100; paths are that machi
 
 ## The page
 
-`make.py` reads the logs and the outputs of the checks and writes the page; `charts.py` is the small SVG chart kit it uses.
+`make.py` reads the logs and the outputs of the checks and writes the page; `appendix.py` is the appendix (every step explained), `charts.py` the small SVG chart kit.
 
 ## Results (`../results`)
 

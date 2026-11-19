@@ -1,0 +1,57 @@
+{
+ "label": "tc #6: 3420 img/s: config: pointwise cat only for 2-input cats (max_pointwise_cat_inputs=2) + inplace_buffers=False. Otherwise as before (freezing + nn-module guard filter: gives up in-place weight updates and module-attribute changes)",
+ "tree": "/home/dev/local/hill/acc/trees/tc_06",
+ "config": "/home/dev/local/hill/acc/trees/tc_06/hill_config.py",
+ "rmse_against_eager_before": 0.07179100069283986,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.12183259774285522,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5958387264579161,
+   "off_by": 0.5965563553485631,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5919920970577557,
+   "off_by": 0.5948944247961726,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8798518278453805,
+   "off_by": 0.8811846910168715,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.0892753961493341,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06891409694625321,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08155407757009558,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 6.9374007107312075,
+   "followed": false
+  },
+  "model.train()": {
+   "followed": false,
+   "right_after_undo": false
+  }
+ }
+}

@@ -1,0 +1,57 @@
+{
+ "label": "vm #1: 1983 img/s: trace may store a tensor into a module buffer (YOLOLayer.grid/ng): whole model is one frozen Inductor graph",
+ "tree": "/home/dev/local/hill/acc/trees/vm_01",
+ "config": "/home/dev/local/hill/acc/trees/vm_01/hill_config.py",
+ "rmse_against_eager_before": 0.0719881933080133,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.12251629942084874,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5950246498390344,
+   "off_by": 0.07731495160529099,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5915301554982599,
+   "off_by": 0.04975949313203025,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8799074299206139,
+   "off_by": 0.05081552871744179,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.05800340955379743,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.09114209857242409,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

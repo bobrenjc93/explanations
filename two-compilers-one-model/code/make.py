@@ -3,6 +3,8 @@ the agents' transcripts (tokens) and the coordinator's validation runs. Everythi
 import glob, json, os, statistics, subprocess, sys
 
 sys.path.insert(0, "/home/dev/local/cfgloop/page")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import appendix as A
 import charts as C
 
 H = "/home/dev/local/hill"
@@ -36,13 +38,19 @@ def gives_up(side, sha):
 
 
 SHORT = {
-    "tc": ["start", "CUDA graphs", "freezing", "separable max pool in Inductor", "guard filter (unsafe)", "pool stages as pointwise kernels",
-           "cat and in-place settings", "first conv padded to 4 channels", "realize threshold", "(hardening)", "autotune", "(reference: no guard filter)",
-           "(repeat)", "CUDA graphs without trees", "(reference: no guard filter)", "(repeat)"],
-    "vm": ["start", "buffer stores in a region: one graph", "CUDA graphs, as a new option", "fast path after own stores", "weights check behind the launch",
-           "pass: pools as a cascade", "(hardening)", "(hardening)", "(docstrings)", "pass: fused cuDNN conv kernel", "more layers fused", "best of five cuDNN engines",
-           "pass: head concatenation apart", "pass: separable pools", "input channels padded", "best of ten engines", "inputs read in place", "(steadier picks)"],
+    "tc": ["start", "CUDA graphs", "freezing (weights built in), with a fix in Dynamo", "max pool one dimension at a time, in Inductor", "guard filter (unsafe)",
+           "pool stages as unrolled kernels", "concatenation and in-place settings", "a fourth input channel for the first convolution", "a smaller inlining threshold",
+           "(hardening)", "autotune: Inductor's own kernels for the 1x1 convolutions", "(reference: no guard filter)", "(repeat)", "CUDA graphs without the tree bookkeeping",
+           "(reference: no guard filter)", "(repeat)"],
+    "vm": ["start", "stores into module buffers allowed: one graph", "CUDA graphs, built as a new option", "fast path kept after the region's own stores",
+           "weights check moved behind the kernel launch", "pass: max pools of 5, 9, 13 as a cascade of 5s", "(hardening)", "(hardening)", "(docstrings)",
+           "pass: convolution + batch norm + LeakyReLU as one cuDNN kernel", "first layer and detection heads fused too", "fastest of cuDNN's first five kernel variants per layer",
+           "pass: final concatenation as a kernel of its own", "pass: each pool as two one-dimensional pools", "input channels padded to a multiple of 4",
+           "fastest of all ten kernel variants per layer", "input read in place instead of copied", "(steadier timing of the variants)"],
 }
+# The few steps named on the chart itself.
+CHART = {("tc", 1): "CUDA graphs", ("tc", 2): "freezing", ("tc", 4): "guard filter (unsafe)", ("tc", 10): "autotune",
+         ("vm", 1): "buffer stores: one graph", ("vm", 2): "CUDA graphs, as a new option", ("vm", 9): "pass: fused cuDNN conv kernel"}
 points = {}
 for side in ("tc", "vm"):
     rows, best = [], 0.0
@@ -130,7 +138,7 @@ def step_chart(xkey, xlab, xmax, xticks, xfmt, w=760, h=380, ymax=5000, labels=T
             p = points[side][i]
             if leader:
                 o.append(f'<line class="axis" x1="{X(p[xkey]):.1f}" y1="{Y(p["qps"])-7:.1f}" x2="{X(p[xkey]):.1f}" y2="{Y(p["qps"])+dy+5:.1f}"/>')
-            o.append(f'<text class="lab" x="{X(p[xkey])+dx:.1f}" y="{Y(p["qps"])+dy:.1f}" text-anchor="{anchor}">{esc(p["short"])}</text>')
+            o.append(f'<text class="lab" x="{X(p[xkey])+dx:.1f}" y="{Y(p["qps"])+dy:.1f}" text-anchor="{anchor}">{esc(CHART[(side, i)])}</text>')
     svg = f'<svg viewBox="0 0 {w} {h}" role="img">' + "".join(o) + "</svg>"
     return svg + C.table_view(["side", "step", "agent minutes", "agent tokens, $", "images/s", "options that give up what eager does"], rows)
 
@@ -176,7 +184,7 @@ def steps_table(side):
     for p in points[side]:
         t = p["tokens"]
         acc = f"{p['infer']['compiled_bfloat16']['mAP@0.5']:.3f}" if p["infer"] else ""
-        rows.append([p["utc"][11:16], f"{p['minutes']:.0f}", f"{p['cost']:.2f}", f"{t['output']/1e3:.0f}k", f"{p['qps']:,.0f}", p["short"],
+        rows.append([p["utc"][11:16], f"{p['minutes']:.0f}", f"{p['cost']:.2f}", f"{t['output']/1e3:.0f}k", f"{p['qps']:,.0f}", f'<a href="#{A.ANCHOR[side][p["i"]]}">{esc(p["short"])}</a>',
                      ", ".join(p["lost"]) if p["lost"] else "nothing", acc] + ([probed(p["probe"])] if every else []))
     return C.table(["UTC", "min", "$", "output tokens", "images/s", "step", "options that give up what eager does", "mAP@0.5, real weights"]
                    + (["probes, real weights"] if every else []), rows, num_from=9)
@@ -262,7 +270,7 @@ if __name__ == "__main__":
     best = {side: max(p["qps"] for p in points[side] if p["eligible"]) for side in points}
     tiles = C.tiles([
         ("torch.compile, 3 hours of one agent", f"{points['tc'][0]['qps']:,.0f} → {best['tc']:,.0f}", f"images/s; ${total['tc']:.0f} of tokens at list price. The best state no longer follows weight updates or <code>model.train()</code>."),
-        ("torch.vm, 3 hours of one agent", f"{points['vm'][0]['qps']:,.0f} → {best['vm']:,.0f}", f"images/s; ${total['vm']:.0f} of tokens. Follows eager on every probe; from 105 minutes on, through a fused cuDNN kernel the agent wrote as a pass."),
+        ("torch.vm, 3 hours of one agent", f"{points['vm'][0]['qps']:,.0f} → {best['vm']:,.0f}", f"images/s; ${total['vm']:.0f} of tokens. Every recorded state follows eager on every probe; from 105 minutes on, through a fused cuDNN kernel the agent wrote as a pass."),
         ("torch.compile with nothing given up", f"{sound_qps:,.0f}" if sound_qps else "…", f"images/s, measured afterwards: the agent's final source with CUDA graphs, the fastest state that passes every probe. With its other settings {nofreeze_qps:,.0f}, but then a recompilation raises an error."),
         ("Predictions, real weights and images", "0.752 / 0.752", "mAP@0.5 of the two final states on 128 COCO images; eager is 0.753 in the same precision. All 34 checkpoints: 0.751 to 0.754."),
     ])
@@ -320,6 +328,7 @@ and the ones taken afterwards with its final source (the square: {sound_qps:,.0f
 <h2>Every step</h2>
 <p>Time and dollars are the agent's own at the moment of the measurement; the dollars are its tokens at Anthropic's list price for the model ($8 per million input, $40 output, $10 cache write, $0.20 cache read; what a cloud provider charges may differ).
 About 57 of each side's 183 minutes were spent waiting for the other side's GPU jobs.</p>
+<p>Each step's name links to what it is, in the <a href="#appendix">appendix</a>.</p>
 <h3>torch.compile: {points['tc'][0]['qps']:,.0f} to {best['tc']:,.0f}</h3>
 <p>Three source files changed (166 lines added: Dynamo's attribute fallback for modules, Inductor's pooling and convolution lowering) and a 55-line configuration.</p>
 {steps_table('tc')}
@@ -334,7 +343,9 @@ letterboxed to the benchmark's 384x512 and in its batches of 8.</p>
 <p>The compiled results are closer to float32 than eager's bfloat16 result is, as they should be where batch norms are folded in float32 before the cast.
 All 34 recorded checkpoints were run through this: their mAP is between 0.751 and 0.754 (eager in bfloat16, in the same processes: 0.753 to 0.754), and it is in the tables above next to each step.</p>
 <h2>What the final states still follow</h2>
-<p>With the pretrained weights, after the callable is warm, a change is made to the callable's model and to an eager copy, and the two outputs are compared.</p>
+<p>With the pretrained weights, after the callable is warm, a change is made to the callable's model and to an eager copy, and the two outputs are compared.
+The table has the final states; the same probes were run on all 34 recorded checkpoints, and the last column of the tables above has the outcome for each.
+Every <code>torch.vm</code> checkpoint follows all of them. Of <code>torch.compile</code>'s, the first two do.</p>
 {probe_table()}
 <p>Without freezing and the guard filter, <code>torch.compile</code> with its agent's final source and final settings ({nofreeze_qps:,.0f} images/s) follows weights and shapes, but where a recompilation is due
 (a replaced parameter, <code>model.train()</code>) it raises an error from Inductor's CUDA-graph bookkeeping ("storage data ptrs are not allocated in pool"). The final source alone, or the settings alone on the
@@ -377,6 +388,7 @@ by the dashboard's rule for bfloat16 and the probes pass (a weight updated in pl
 <li>Found while the harness was built: the dashboard's runner compiles a function that calls the model, and that is what the <code>torch.compile</code> side starts from. <code>torch.compile(model)</code> on the module itself runs this model
 at 7.6 ms per batch instead of 4.0, with the same graphs. The cause was not looked into.</li>
 </ul>
+{A.APPENDIX}
 """
     title = "One model, two compilers, the same agent for three hours each"
     description = ("TorchBench yolov3 inference under torch.compile and torch.vm: two instances of the same AI agent get three hours each to improve one compiler, and throughput is plotted "
@@ -387,7 +399,7 @@ at 7.6 ms per batch instead of 4.0, with the same graphs. The cause was not look
               '<a href="https://github.com/bobrenjc93/explanations/tree/main/two-compilers-one-model">two-compilers-one-model</a>.</footer>')
     head = (f'<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>{esc(title)}</title>\n'
             f'<meta name="description" content="{esc(description)}">\n<link rel="icon" href="../favicon.svg" type="image/svg+xml">\n<link rel="icon" href="../favicon.ico" sizes="any">\n'
-            f'<link rel="apple-touch-icon" href="../apple-touch-icon.png">\n<style>{C.CSS}{C.EXTRA_CSS}</style>\n</head>\n<body>\n')
+            f'<link rel="apple-touch-icon" href="../apple-touch-icon.png">\n<style>{C.CSS}{C.EXTRA_CSS}{A.CSS}</style>\n</head>\n<body>\n')
     page = f"{head}{body}{footer}\n<script>{C.JS}</script>\n</body>\n</html>\n"
     os.makedirs(f"{H}/report", exist_ok=True)
     open(f"{H}/report/index.html", "w").write(page)

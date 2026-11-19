@@ -1,0 +1,57 @@
+{
+ "label": "vm #9: 3476 img/s: config: user pass fuse_convolutions + operator on cuDNN's backend API (ctypes): conv+batchnorm+LeakyReLU(+shortcut add) as one runtime-fused cuDNN kernel where timing says it is faster",
+ "tree": "/home/dev/local/hill/acc/trees/vm_09",
+ "config": "/home/dev/local/hill/acc/trees/vm_09/hill_config.py",
+ "rmse_against_eager_before": 0.07167644599608425,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.12192298292301179,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5950246498390344,
+   "off_by": 0.0772486376355161,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5915301554982599,
+   "off_by": 0.05843164245393724,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8799074299206139,
+   "off_by": 0.06007972224911509,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.05906930081674992,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.10648925225386792,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}
