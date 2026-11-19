@@ -1,0 +1,239 @@
+diff --git a/torch/_dynamo/variables/user_defined.py b/torch/_dynamo/variables/user_defined.py
+index 01598be..3b53117 100644
+--- a/torch/_dynamo/variables/user_defined.py
++++ b/torch/_dynamo/variables/user_defined.py
+@@ -4525,7 +4525,16 @@ class UserDefinedObjectVariable(UserDefinedVariable):
+                 ).call_function(tx, [variables.ConstantVariable.create(name)], {})
+ 
+             if self.source and getattr_fn is torch.nn.Module.__getattr__:
+-                if isinstance(
++                # Only a submodule needs its nn_module_stack source. A lazy
++                # parameter or buffer stays lazy: the isinstance below would
++                # realize it and install its guards, though hasattr() and an
++                # overwrite of the attribute never read the value.
++                is_lazy_non_module = (
++                    isinstance(out, variables.LazyVariableTracker)
++                    and not out.is_realized()
++                    and not isinstance(out.peek_value(), torch.nn.Module)
++                )
++                if not is_lazy_non_module and isinstance(
+                     out,
+                     (
+                         variables.UnspecializedNNModuleVariable,
+diff --git a/torch/_inductor/kernel/conv.py b/torch/_inductor/kernel/conv.py
+index 1a18597..081bfd7 100644
+--- a/torch/_inductor/kernel/conv.py
++++ b/torch/_inductor/kernel/conv.py
+@@ -8,6 +8,8 @@ import torch
+ from torch._dynamo.device_interface import get_interface_for_device
+ from torch._inductor.codegen.rocm.ck_conv_template import CKGroupedConvFwdTemplate
+ 
++from torch.utils._mode_utils import no_dispatch
++
+ from .. import config, ir
+ from ..lowering import (
+     add_layout_constraint,
+@@ -458,6 +460,56 @@ def convert_1x1_conv_to_mm(x, weight, bias):
+     return L[aten.permute](result, result_permute)
+ 
+ 
++def _half_conv_in_channel_padding(
++    x: TensorBox,
++    in_chan: int,
++    groups: int,
++    transposed: bool,
++    ndim: int,
++    device_type: str,
++) -> int:
++    """Number of zero input channels to add to a convolution.
++
++    cuDNN's channels-last half-precision kernels are slow for 3 input channels
++    (the first convolution of an image model): 102 us with 3 channels against
++    78 us with a 4th channel of zeros (bf16 and fp16, 8x3x384x512 to 32
++    channels, 3x3, H100). A zero channel with zero weights adds exactly 0 to
++    every sum, so only the kernel cuDNN picks changes.
++    """
++    if (
++        device_type == "cuda"
++        and V.graph.layout_opt
++        and ndim == 2
++        and not transposed
++        and groups == 1
++        and in_chan == 3
++        and x.get_dtype() in (torch.float16, torch.bfloat16)
++        and V.graph.sizevars.statically_known_equals(x.get_size()[1], in_chan)
++    ):
++        return 1
++    return 0
++
++
++def _pad_weight_in_channels(weight: TensorBox, pads: list[int]) -> TensorBox:
++    data = weight.data
++    name = (
++        data.data.get_name()
++        if isinstance(data, ir.StorageBox) and isinstance(data.data, ir.ConstantBuffer)
++        else None
++    )
++    if (
++        name is not None
++        and name in V.graph.constants
++        and data.data.override_device is None
++    ):
++        # A constant weight (freezing) is padded once, at compile time
++        with no_dispatch():
++            padded = torch.nn.functional.pad(V.graph.constants[name], pads)
++            padded = padded.contiguous(memory_format=torch.channels_last)
++        return V.graph.add_tensor_constant(padded)
++    return L[aten.constant_pad_nd](weight, pads, 0)
++
++
+ @register_lowering(aten.convolution)
+ def convolution(
+     x: TensorBox,
+@@ -579,6 +631,15 @@ def convolution(
+         # output must be reproduced for fused consumers (see #201296).
+         return emulate_lowp_output_cast(result)
+ 
++    pad_chan = _half_conv_in_channel_padding(
++        x, in_chan, groups, transposed, ndim, device_type
++    )
++    if pad_chan:
++        pads = [0, 0] * ndim + [0, pad_chan]
++        x = L[aten.constant_pad_nd](x, pads, 0)
++        weight = _pad_weight_in_channels(weight, pads)
++        in_chan += pad_chan
++
+     x.realize()
+     weight.realize()
+ 
+diff --git a/torch/_inductor/lowering.py b/torch/_inductor/lowering.py
+index ab2e781..65e8f40 100644
+--- a/torch/_inductor/lowering.py
++++ b/torch/_inductor/lowering.py
+@@ -6139,6 +6139,81 @@ def _pool_argmax_inner_fn(x, kernel_size, inner_fn):
+     return inner_fn_with_index
+ 
+ 
++def _cur_node_uses_only_values() -> bool:
++    """True when the FX node being lowered returns (values, indices) and nothing reads the indices."""
++    node = getattr(V.graph, "current_node", None)
++    if node is None:
++        return False
++    return all(
++        user.op == "call_function"
++        and user.target is operator.getitem
++        and user.args[1] == 0
++        for user in node.users
++    )
++
++
++def _max_pool_separable_pays_off(kernel_size, stride) -> bool:
++    """The max over a window is the max over one dim of the max over the others, so the
++    values can be reduced one dim at a time: k_1 + ... + k_n loads per element in place
++    of k_1 * ... * k_n. Dims are reduced last to first, so the intermediate of dim d
++    still has dims before d at input resolution (stride times more elements), and each
++    intermediate is stored and loaded again. Only worth it when it at least halves the loads.
++    """
++    if not all(isinstance(v, (int, sympy.Integer)) for v in (*kernel_size, *stride)):
++        return False
++    if sum(k > 1 for k in kernel_size) < 2:
++        return False
++    window = functools.reduce(operator.mul, kernel_size)
++    loads, scale = 0, 1
++    for d in range(len(kernel_size)):
++        # +2: the store and the load of the intermediate (the last stage, dim 0, has none)
++        loads += (kernel_size[d] + (2 if d > 0 else 0)) * scale
++        scale *= stride[d]
++    return 2 * loads <= window
++
++
++def _max_pool_values_separable(
++    x, kernel_size, stride, padding, dilation, dhw_out, min_value, check_bounds, n_dim
++):
++    dtype = x.dtype
++    cur = x
++    for d in reversed(range(n_dim)):
++        size = list(cur.get_size())
++        axis = len(size) - n_dim + d
++        in_size = size[axis]
++        size[axis] = dhw_out[d]
++        loader = cur.make_loader()
++
++        def fn_inner(idx, reduction_idx, loader=loader, axis=axis, d=d, in_size=in_size):
++            pos = idx[axis] * stride[d] + reduction_idx[0] * dilation[d] - padding[d]
++            index = [*idx[:axis], pos, *idx[axis + 1 :]]
++            if not check_bounds:
++                return loader(index)
++            return ops.masked(
++                range_mask(pos, in_size, 0), lambda: loader(index), min_value
++            )
++
++        # One dim of a pooling window is short: a pointwise kernel of k loads beats a
++        # reduction kernel over k elements, as on the low-memory path.
++        with config.patch(
++            unroll_reductions_threshold=max(config.unroll_reductions_threshold, 26)
++        ):
++            cur = Reduction.create(
++                reduction_type="max",
++                input_node=cur,
++                device=x.get_device(),
++                dst_dtype=dtype,
++                src_dtype=dtype,
++                inner_fn=fn_inner,
++                ranges=size,
++                reduction_ranges=[kernel_size[d]],
++            )
++        if d > 0:
++            # An unrealized stage would be inlined into the next one, window loads again
++            cur.realize()
++    return cur
++
++
+ def _max_pool_with_offsets(
+     x,
+     kernel_size,
+@@ -6170,7 +6245,8 @@ def _max_pool_with_offsets(
+     )
+ 
+     new_size = list(batch) + list(dhw_out)
+-    if any(padding) or any(ceil_mode) or any(d > 1 for d in dilation):
++    check_bounds = any(padding) or any(ceil_mode) or any(d > 1 for d in dilation)
++    if check_bounds:
+         x_loader = constant_boundary_condition(x, min_value, dim=n_dim)
+     else:
+         x_loader = x.make_loader()
+@@ -6184,16 +6260,24 @@ def _max_pool_with_offsets(
+         ]
+         return x_loader([*prefix, *ih])
+ 
+-    result = Reduction.create(
+-        reduction_type="max",
+-        input_node=x,
+-        device=x.get_device(),
+-        dst_dtype=dtype,
+-        src_dtype=dtype,
+-        inner_fn=fn_inner,
+-        ranges=new_size,
+-        reduction_ranges=kernel_size,
+-    )
++    # The indices need the whole window at once; the values alone do not.
++    if _cur_node_uses_only_values() and _max_pool_separable_pays_off(
++        kernel_size, stride
++    ):
++        result = _max_pool_values_separable(
++            x, kernel_size, stride, padding, dilation, dhw_out, min_value, check_bounds, n_dim
++        )
++    else:
++        result = Reduction.create(
++            reduction_type="max",
++            input_node=x,
++            device=x.get_device(),
++            dst_dtype=dtype,
++            src_dtype=dtype,
++            inner_fn=fn_inner,
++            ranges=new_size,
++            reduction_ranges=kernel_size,
++        )
+     offsets = Reduction.create(
+         reduction_type="argmax",
+         input_node=x,

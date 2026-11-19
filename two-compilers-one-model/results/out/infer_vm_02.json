@@ -1,0 +1,96 @@
+{
+ "label": "vm #2: 2456 img/s: Graphs(cuda_graphs=True): new option of torch.vm, the compiled graph is recorded as a CUDA graph and replayed (inputs copied in, results cloned)",
+ "tree": "/home/dev/local/hill/acc/trees/vm_02",
+ "config": "/home/dev/local/hill/acc/trees/vm_02/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7584290165568407,
+  "precision": 0.5574199803663428,
+  "recall": 0.7903271631560891
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7534942888055738,
+  "precision": 0.5549534502329211,
+  "recall": 0.7902560385696266
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7521090938381697,
+  "precision": 0.5528274958942341,
+  "recall": 0.7868404563567762
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 721,
+   "found": 705,
+   "missing": 16,
+   "extra": 8,
+   "largest_score_difference": 0.0234375,
+   "largest_box_shift_px": 10.696456909179688
+  },
+  "detections_iou_0.5": {
+   "detections": 721,
+   "found": 709,
+   "missing": 12,
+   "extra": 4,
+   "largest_score_difference": 0.0234375,
+   "largest_box_shift_px": 15.65289306640625
+  },
+  "raw_output": {
+   "rmse": 0.07467410025712334,
+   "largest": 30.0,
+   "rms_of_reference": 41.326312729819534
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 588,
+   "missing": 139,
+   "extra": 125,
+   "largest_score_difference": 0.04813408851623535,
+   "largest_box_shift_px": 10.553131103515625
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 708,
+   "missing": 19,
+   "extra": 5,
+   "largest_score_difference": 0.04813408851623535,
+   "largest_box_shift_px": 10.553131103515625
+  },
+  "raw_output": {
+   "rmse": 0.09229599962997752,
+   "largest": 17.195556640625,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 590,
+   "missing": 137,
+   "extra": 131,
+   "largest_score_difference": 0.04084038734436035,
+   "largest_box_shift_px": 5.308845520019531
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 714,
+   "missing": 13,
+   "extra": 7,
+   "largest_score_difference": 0.04084038734436035,
+   "largest_box_shift_px": 17.064117431640625
+  },
+  "raw_output": {
+   "rmse": 0.1013759875642661,
+   "largest": 23.755874633789062,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.327301229182254
+ },
+ "ms_per_batch_with_copy_out": 24.412965518422425
+}

@@ -1,0 +1,54 @@
+{
+ "label": "tc #12: 3816 img/s: final state: the 3806 config again (max_autotune + freezing + CUDA graphs + nn-module guard filter; gives up in-place weight updates and module-attribute changes), tree unchanged",
+ "tree": "/home/dev/local/hill/acc/trees/tc_12",
+ "config": "/home/dev/local/hill/acc/trees/tc_12/hill_config.py",
+ "rmse_against_eager_before": 0.0727410239591839,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.1232873454337182,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5940015153988939,
+   "off_by": 0.595456368917748,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5923968550007377,
+   "off_by": 0.5952714026773165,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8794924338209396,
+   "off_by": 0.8801100203462762,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.08969022833509599,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06891409694625321,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08148404329665455,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "raised": "RuntimeError: These storage data ptrs are not allocated in pool (0, 1) but should be: {94742785653760, 94742762228288, 94742684255616, 94742749306816}. This could be a bug in inductor aliasing tracking or in a custom op's meta function. Please file an issue."
+  },
+  "model.train()": {
+   "raised": "RuntimeError: These storage data ptrs are not allocated in pool (0, 1) but should be: {94742673196800, 94742774345280, 94742684460480, 94742765415872}. This could be a bug in inductor aliasing tracking or in a custom op's meta function. Please file an issue."
+  }
+ }
+}

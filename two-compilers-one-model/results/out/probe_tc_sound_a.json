@@ -1,0 +1,54 @@
+{
+ "label": "tc_sound_a",
+ "tree": "/home/dev/local/hill/acc/trees/tc_15",
+ "config": "/home/dev/local/hill/acc/configs/tc_sound_a.py",
+ "rmse_against_eager_before": 0.051364105738035334,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.09036377906557122,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5958387264579161,
+   "off_by": 0.05326446512265889,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5919920970577557,
+   "off_by": 0.050494970271688,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8798518278453805,
+   "off_by": 0.04898175038815436,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.057817957714027084,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.04695841097789951,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.05368259584470502,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "raised": "RuntimeError: These storage data ptrs are not allocated in pool (0, 1) but should be: {94628005821824, 94627954363264, 94628018726784, 94627557391872}. This could be a bug in inductor aliasing tracking or in a custom op's meta function. Please file an issue."
+  },
+  "model.train()": {
+   "raised": "RuntimeError: These storage data ptrs are not allocated in pool (0, 1) but should be: {94628111457920, 94628111455360, 94628166268544, 94628141566144}. This could be a bug in inductor aliasing tracking or in a custom op's meta function. Please file an issue."
+  }
+ }
+}

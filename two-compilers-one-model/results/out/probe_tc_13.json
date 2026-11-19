@@ -1,0 +1,57 @@
+{
+ "label": "tc #13: 3973 img/s: config: triton.cudagraph_trees=False (older single CUDA graph path, 35 us less host bookkeeping per call). GIVES UP the stale-output check: returned tensors are static buffers the next call overwrites silently. Otherwise the 3816 config (freezing + nn-module guard filter: gives up in-place weight updates and module-attribute changes)",
+ "tree": "/home/dev/local/hill/acc/trees/tc_13",
+ "config": "/home/dev/local/hill/acc/trees/tc_13/hill_config.py",
+ "rmse_against_eager_before": 0.0732796905867726,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935180628307474,
+   "off_by": 0.12377920413169326,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.595162930162821,
+   "off_by": 0.5961572713053478,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5921041090297542,
+   "off_by": 0.5956746116684085,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8792652717588705,
+   "off_by": 0.8815573878203196,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.08865141776215316,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06894339917021232,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08203184114142024,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935180628307474,
+   "off_by": 6.93454044907508,
+   "followed": false
+  },
+  "model.train()": {
+   "followed": false,
+   "right_after_undo": false
+  }
+ }
+}

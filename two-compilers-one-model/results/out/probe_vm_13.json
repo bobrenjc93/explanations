@@ -1,0 +1,57 @@
+{
+ "label": "vm #13: 4253 img/s: config: max pools separable (k x 1 then 1 x k), fused kernel's inputs asked for in NHWC in the graph",
+ "tree": "/home/dev/local/hill/acc/trees/vm_13",
+ "config": "/home/dev/local/hill/acc/trees/vm_13/hill_config.py",
+ "rmse_against_eager_before": 0.0723325033381603,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.12249654213739841,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5940015153988939,
+   "off_by": 0.07847196139167373,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5923968550007377,
+   "off_by": 0.07186897756013579,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8794924338209396,
+   "off_by": 0.07392865903018085,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.06007358183104467,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.12248157150722908,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

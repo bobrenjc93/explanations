@@ -32,6 +32,7 @@ TAGS = {
     "calculator-scaling": ["transformers", "experiment", "scaling laws"],
     "cfg-compile": ["PyTorch", "compilers", "torch.compile", "benchmarks"],
     "frame-stack-chunks": ["PyTorch", "CPython", "benchmarks", "debugging"],
+    "two-compilers-one-model": ["PyTorch", "compilers", "torch.compile", "experiment", "AI agents"],
 }
 
 

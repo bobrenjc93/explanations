@@ -1,0 +1,96 @@
+{
+ "label": "tc_sound_a",
+ "tree": "/home/dev/local/hill/acc/trees/tc_15",
+ "config": "/home/dev/local/hill/acc/configs/tc_sound_a.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7584290165568407,
+  "precision": 0.5574199803663428,
+  "recall": 0.7903271631560891
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7530504965229602,
+  "precision": 0.5538967023959525,
+  "recall": 0.7898512006823969
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7528186740834344,
+  "precision": 0.554518899884114,
+  "recall": 0.7898288504928048
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 719,
+   "found": 712,
+   "missing": 7,
+   "extra": 9,
+   "largest_score_difference": 0.031463623046875,
+   "largest_box_shift_px": 23.997650146484375
+  },
+  "detections_iou_0.5": {
+   "detections": 719,
+   "found": 715,
+   "missing": 4,
+   "extra": 6,
+   "largest_score_difference": 0.031463623046875,
+   "largest_box_shift_px": 23.997650146484375
+  },
+  "raw_output": {
+   "rmse": 0.05195403520093822,
+   "largest": 12.0,
+   "rms_of_reference": 41.326306013478806
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 593,
+   "missing": 134,
+   "extra": 128,
+   "largest_score_difference": 0.05771660804748535,
+   "largest_box_shift_px": 26.140792846679688
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 715,
+   "missing": 12,
+   "extra": 6,
+   "largest_score_difference": 0.05771660804748535,
+   "largest_box_shift_px": 26.140792846679688
+  },
+  "raw_output": {
+   "rmse": 0.0953678305910534,
+   "largest": 28.450958251953125,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 588,
+   "missing": 139,
+   "extra": 131,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 5.282386779785156
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 713,
+   "missing": 14,
+   "extra": 6,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 17.0206298828125
+  },
+  "raw_output": {
+   "rmse": 0.10137936710777458,
+   "largest": 24.255874633789062,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32625828935979
+ },
+ "ms_per_batch_with_copy_out": 22.742059431038797
+}

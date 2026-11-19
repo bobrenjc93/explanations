@@ -1,0 +1,54 @@
+{
+ "label": "tc #9: 3446 img/s: conv lowering hardened (constant weight on another device takes the runtime pad); no speed change expected. Config as before (freezing + nn-module guard filter: gives up in-place weight updates and module-attribute changes)",
+ "tree": "/home/dev/local/hill/acc/trees/tc_09",
+ "config": "/home/dev/local/hill/acc/trees/tc_09/hill_config.py",
+ "rmse_against_eager_before": 0.07222254350222396,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.12337330520954894,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5950246498390344,
+   "off_by": 0.5969553525164367,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5915301554982599,
+   "off_by": 0.5947986312873472,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8799074299206139,
+   "off_by": 0.8815452233502451,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.09039288064288095,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06894339917021232,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08168877528909964,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "raised": "RuntimeError: These storage data ptrs are not allocated in pool (0, 1) but should be: {94200826544640, 94200759474624, 94200757657152, 94200816198848}. This could be a bug in inductor aliasing tracking or in a custom op's meta function. Please file an issue."
+  },
+  "model.train()": {
+   "raised": "RuntimeError: These storage data ptrs are not allocated in pool (0, 1) but should be: {94200803432192, 94200797891392, 94200815839360, 94200819143552}. This could be a bug in inductor aliasing tracking or in a custom op's meta function. Please file an issue."
+  }
+ }
+}

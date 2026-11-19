@@ -1,0 +1,54 @@
+{
+ "label": "tc_sound_b",
+ "tree": "/home/dev/local/hill/acc/trees/tc_15",
+ "config": "/home/dev/local/hill/acc/configs/tc_sound_b.py",
+ "rmse_against_eager_before": 0.051607976951670936,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.09030861995522492,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5950246498390344,
+   "off_by": 0.051569179842935596,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5915301554982599,
+   "off_by": 0.0497191715719307,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8799074299206139,
+   "off_by": 0.050595907653921815,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.05838899638699067,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.04695841097789951,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.05348780358639087,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "raised": "RuntimeError: These storage data ptrs are not allocated in pool (0, 1) but should be: {94628753164224, 94628752905024, 94628752287168, 94628707562688}. This could be a bug in inductor aliasing tracking or in a custom op's meta function. Please file an issue."
+  },
+  "model.train()": {
+   "raised": "RuntimeError: These storage data ptrs are not allocated in pool (0, 1) but should be: {94628834410112, 94628725261440, 94628712428160, 94628834283200}. This could be a bug in inductor aliasing tracking or in a custom op's meta function. Please file an issue."
+  }
+ }
+}

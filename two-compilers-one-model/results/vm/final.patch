@@ -1,0 +1,710 @@
+diff --git a/torch/vm/__init__.py b/torch/vm/__init__.py
+index acbaef5..2c718b0 100644
+--- a/torch/vm/__init__.py
++++ b/torch/vm/__init__.py
+@@ -479,6 +479,7 @@ def vm(
+             0,
+             freeze,
+             tuple(over_graph),
++            found.cuda_graphs,
+         )
+         block[0] = regions
+     try:
+diff --git a/torch/vm/_regions.py b/torch/vm/_regions.py
+index c9843db..4013692 100644
+--- a/torch/vm/_regions.py
++++ b/torch/vm/_regions.py
+@@ -43,7 +43,9 @@ classes, and tuples, lists, dicts, pytree nodes and plain objects of those
+ runs on copies of the lists, dicts and objects, so that what the code does to
+ them shows: storing an item or an attribute is then something the region does
+ to the real ones after its graph has run (``_Variant.effects``), as is
+-storing a tensor in an attribute of a module that held one. An instruction
++storing a tensor in an attribute or a buffer of a module that held one (a
++call after such a store is told to be like the one before by describing the
++call again once it has run, ``_Region.foresee``). An instruction
+ that takes anything else from before the region stays with the VM. What a
+ region gives back may also be an object it made itself, which every call then
+ makes again from the results of the graph (``_Recipes``).
+@@ -85,6 +87,11 @@ operation on the tensor itself still moves it to other memory; on a GPU,
+ where a tensor that shares its memory is slower to read, its storage is
+ asked to tell of such a write instead (``_watched``). A variant whose tensors
+ changed is made again with those as inputs.
++
++With ``cuda_graphs`` what the backend made of a graph that is the work of
++one GPU is recorded as a CUDA graph on its second call and replayed from then
++on, on copies of the inputs and with copies of the results handed back
++(``_Replay``, and ``_replayable`` for which graphs).
+ """
+ 
+ import ast
+@@ -592,28 +599,54 @@ def _module_change_started(code: types.CodeType, offset: int) -> None:
+     if id(module) not in traced:
+         return
+     name = _MODULE_CHANGES[code]
++    watch = _state.watch
++    attribute: Any = arguments.get("name")
+     if name == "__setattr__":
+-        attribute: Any = arguments.get("name")
+         if isinstance(module, nn.RNNBase) and attribute in _DERIVED:
+             # Derived from the parameters, which the trace replaced: put
+             # back when the trace is over (see ``_Watch``).
+             return
+-        current = vars(module).get(attribute, module)
++        held = _keeper(module, attribute)
++        current = held.get(attribute, module)
+         value: Any = arguments.get("value", code)
+-        if current is value:
++        if current is value and held is vars(module):
+             return
+-        watch = _state.watch
+         if watch is not None and type(value) is FakeTensor:
+             if type(current) is FakeTensor or type(current) in _TENSORS:
+-                # A tensor the module keeps as a plain attribute (a mask it
+-                # builds, a cache) gets another tensor of the trace. The
+-                # trace goes on with it, and the region stores what the
+-                # graph computes for it when it has run (``_Watch.stored``).
+-                watch.stores[(id(vars(module)), attribute)] = (module, attribute)
++                # A tensor the module keeps as a plain attribute or as a
++                # buffer (a mask it builds, a cache, a grid) gets another
++                # tensor of the trace. The trace goes on with it, and the
++                # region stores what the graph computes for it when it has
++                # run (``_Watch.stored``).
++                watch.stores[(id(held), attribute)] = (module, attribute)
+                 return
++    elif name == "register_buffer" and watch is not None:
++        # What ``Module.__setattr__`` makes of a store into a buffer that was
++        # let through above: the same store, with the buffer as persistent as
++        # it was. A hook on registrations is code a graph does not hold.
++        buffers = vars(module).get("_buffers")
++        registered = (id(buffers), attribute) in watch.stores
++        transient = vars(module).get("_non_persistent_buffers_set", ())
++        as_before = bool(arguments.get("persistent", True)) == (
++            attribute not in transient
++        )
++        hooks = torch.nn.modules.module._global_buffer_registration_hooks
++        if registered and as_before and not hooks:
++            return
+     raise Untraceable(f"{name} on a module the region was given")
+ 
+ 
++def _keeper(module: nn.Module, name: str) -> dict[str, Any]:
++    """The dict of a module that a store of a tensor under ``name`` goes to:
++    its buffers if it has one of that name, else its attributes."""
++    attributes = vars(module)
++    if name not in attributes:
++        buffers = attributes.get("_buffers")
++        if type(buffers) is dict and name in buffers:
++            return buffers
++    return attributes
++
++
+ def _watch_module_changes(on: bool) -> None:
+     """Has the methods that change a module report to the trace, or stops it.
+ 
+@@ -702,7 +735,7 @@ class _Watch:
+         before = {id(held): saved for held, saved in self.saved}
+         found = []
+         for (held, name), (module, _) in self.stores.items():
+-            value = vars(module).get(name)
++            value = _keeper(module, name).get(name)
+             if value is not before[held].get(name):
+                 found.append((module, name, value))
+         return found
+@@ -2525,6 +2558,7 @@ class _Variant:
+         "grows",
+         "guards",
+         "keep",
++        "layout",
+         "leap",
+         "numbers",
+         "moves",
+@@ -2536,6 +2570,7 @@ class _Variant:
+         "shape",
+         "stamp",
+         "state",
++        "stores",
+         "unwritten",
+         "watch",
+         "written",
+@@ -2568,6 +2603,8 @@ class _Variant:
+         # one of them with other items, keys or attributes than it had.
+         self.effects: list[Any] = []
+         self.grows = False
++        # Whether one of the effects is a tensor stored in a module.
++        self.stores = False
+         # For a variant that leaves sizes open: which calls it holds for
+         # (a ``ShapeGuard``), the same as text, and which of the integers of
+         # a call its graph takes after the tensors.
+@@ -2592,6 +2629,8 @@ class _Variant:
+         # What the tensors of the modules were (``_Inputs.known``) when those
+         # the graph has built in were last found to be what it was built with.
+         self.unwritten: list[tuple[int, _Known]] | None = None
++        # See ``covered``.
++        self.layout: tuple[Any, bool] | None = None
+ 
+     def run(self, inputs: _Inputs) -> Any:
+         flat, held = inputs.flat, inputs.held
+@@ -2617,6 +2656,7 @@ class _Variant:
+     def affects(self, effects: list[Any], grows: bool) -> None:
+         self.effects, self.grows = effects, grows
+         self.direct = self.direct and not effects
++        self.stores = any(effect[0] == "module" for effect in effects)
+ 
+     def freeze(
+         self, flat: list[torch.Tensor], positions: list[int], clones: list[torch.Tensor]
+@@ -2656,10 +2696,7 @@ class _Variant:
+             return None
+         tensors = self.state(inputs.flat)
+         if _runtime.tensor_stamp(tensors) == self.stamp:
+-            if known and all(
+-                any(first <= at < first + len(found.tensors) for first, found in known)
+-                for at in self.positions
+-            ):
++            if known and self.covered(known):
+                 self.unwritten = known
+             return None
+         self.unwritten = None
+@@ -2688,6 +2725,32 @@ class _Variant:
+         self.stamp = _runtime.tensor_stamp(tensors)
+         return None
+ 
++    def confirm(self, inputs: _Inputs) -> None:
++        """The part of ``stale`` that changes nothing: if what the graph has
++        built in is what the modules hold, and they were found as a look
++        left them, a later call that finds them so again need not ask.
++        Anything else is for ``stale`` to find, at the call it matters to."""
++        if self.state is None or not inputs.unwritten or not inputs.known:
++            return
++        tensors = self.state(inputs.flat)
++        if _runtime.tensor_stamp(tensors) == self.stamp:
++            if self.covered(inputs.known):
++                self.unwritten = inputs.known
++
++    def covered(self, known: list[tuple[int, _Known]]) -> bool:
++        """Whether every tensor the graph has built in is one of a module
++        that was found as a look had left it. That depends on where the
++        tensors of the modules are in the call, which is the same from call
++        to call: it is worked out once for each way they are laid out."""
++        layout = tuple([(first, len(found.tensors)) for first, found in known])
++        if self.layout is None or self.layout[0] != layout:
++            inside = all(
++                any(first <= at < first + count for first, count in layout)
++                for at in self.positions
++            )
++            self.layout = (layout, inside)
++        return self.layout[1]
++
+     def holds(self) -> bool:
+         """Whether what the path read is still what it was."""
+         for kind, owner, name, value in self.guards:
+@@ -2796,9 +2859,42 @@ class _Region:
+             if not all(check.holds(flat[i]) for i, check in variant.checks):  # type: ignore[union-attr]
+                 return self.decline(args)
+         if variant.proven:  # type: ignore[union-attr]
+-            return variant.run(inputs)  # type: ignore[union-attr]
++            results = variant.run(inputs)  # type: ignore[union-attr]
++            if variant.stores and self.unusual < _MOST_UNUSUAL:  # type: ignore[union-attr]
++                self.foresee(args, variant)  # type: ignore[arg-type]
++            return results
+         return self.first_run(key, variant, args, inputs)  # type: ignore[arg-type]
+ 
++    def foresee(self, args: tuple[Any, ...], variant: "_Variant") -> None:
++        """After a call whose variant stored tensors in the modules it was
++        given (a grid a layer builds on every call): the next call finds
++        other tensors there than this one did, so it would not be like this
++        one, and would be described the long way, as would every call after
++        it. The call is described again here, as the modules are now, so
++        that the next one is like it. On a GPU that is after the kernels of
++        the call were launched, while they run, where the long way at the
++        start of the next call would be before its kernels. What the graph
++        has built in is checked against the tensors as they are now for the
++        same reason: a call that finds them as this look left them need not
++        check again (``_Variant.stale``)."""
++        try:
++            inputs = _Inputs()
++            key = self.key(args, inputs)
++            if not inputs.unwritten:
++                # That was the look at the tensors as they are now; what a
++                # call is like is told from one that finds them as a look
++                # left them.
++                inputs = _Inputs()
++                key = self.key(args, inputs)
++        except _Opaque:
++            return
++        usual = _usual(self.keyed(args), args, inputs, key)
++        if usual is not None:
++            if len(self.usual) >= _MOST_USUAL:
++                self.usual.clear()
++            self.usual[self.lead(args)] = usual
++            variant.confirm(inputs)
++
+     def settle(self, inputs: _Inputs) -> None:
+         """After a call that found a tensor of a module written to or in
+         other memory than when it was last looked at, and what the graph has
+@@ -3383,7 +3479,8 @@ class _Region:
+             rest = [e for i, e in enumerate(example) if i not in taken]
+             try:
+                 with_weights = _built_in(graph, inputs.flat, frozen)
+-                compiled = _BUILDS_IN[options.backend](with_weights, rest)
++                replayed = options.replayed(with_weights)
++                compiled = replayed(_BUILDS_IN[options.backend](with_weights, rest))
+             except Exception:
+                 # The graph that takes its weights is still to be had.
+                 compiled = None
+@@ -3401,7 +3498,8 @@ class _Region:
+                 raise _Capped(None, "more graphs than a region may have")
+             example = opening.example() if opening is not None else list(inputs.flat)
+             try:
+-                compiled = options.backend(graph, example)
++                replayed = options.replayed(graph)
++                compiled = replayed(options.backend(graph, example))
+             except Exception as e:
+                 reason = f"{type(e).__name__}: {e}".split("\n")[0][:200]
+                 raise _Failed(None, f"the backend failed: {reason}") from None
+@@ -4056,12 +4154,16 @@ class Regions:
+         warmup: int,
+         freeze: bool = True,
+         passes: tuple[Callable[..., Any], ...] = (),
++        cuda_graphs: bool = False,
+     ) -> None:
+         self.backend = backend
+         self.min_ops = min_ops
+         self.max_variants = max_variants
+         self.warmup = warmup
+         self.freeze = freeze
++        # Whether what the backend makes of a graph that runs on one GPU is
++        # run as a CUDA graph (``_Replay``).
++        self.cuda_graphs = cuda_graphs
+         # The passes of the user's over the graph of a region
+         # (``(gm, input_types) -> gm``), applied before the backend gets it.
+         self.passes = passes
+@@ -4078,6 +4180,22 @@ class Regions:
+         # another region waited for each.
+         self.waiting: dict[Any, dict[_Region, int]] = {}
+ 
++    def replayed(
++        self, graph: torch.fx.GraphModule
++    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++        """What turns the code a backend makes of ``graph`` into code that
++        runs it as a CUDA graph, if that was asked for and the graph can be
++        run so. Looked at before the backend gets the graph, which it may
++        change."""
++        if not self.cuda_graphs:
++            return lambda compiled: compiled
++        try:
++            used, constant, device = _replayable(graph)
++        except _NoReplay as e:
++            reason = str(e)
++            return lambda compiled: _Replay(compiled, [], [], None, reason)
++        return lambda compiled: _Replay(compiled, used, constant, device, None)
++
+     def wait(self, region: _Region) -> None:
+         self.waiting.setdefault(region.plan.function, {})[region] = 0
+ 
+@@ -4129,6 +4247,11 @@ class Regions:
+         for plan in self.plans:
+             for part in plan.regions:
+                 variants = [v for v in part.variants.values() if v is not None]
++                replays = [
++                    v.compiled.state()
++                    for v in variants
++                    if isinstance(v.compiled, _Replay)
++                ]
+                 entries.append(
+                     {
+                         "where": repr(part),
+@@ -4149,6 +4272,10 @@ class Regions:
+                         ],
+                     }
+                 )
++                if self.cuda_graphs:
++                    # Per variant: "recorded", "waiting", or why its graph
++                    # is not run as a CUDA graph.
++                    entries[-1]["cuda_graphs"] = replays
+             for index, reason in plan.bad.items():
+                 where = f"{plan.name}[{index}]"
+                 entries.append(
+@@ -4252,7 +4379,7 @@ def _written(
+     written = {i for i, f in enumerate(fake) if f._version != versions[i]}
+     where = {id(tensor): i for i, tensor in enumerate(flat)}
+     for module, name, _ in stored:
+-        position = where.get(id(vars(module).get(name)))
++        position = where.get(id(_keeper(module, name).get(name)))
+         if position is not None:
+             written.add(position)
+     return written
+@@ -4368,6 +4495,329 @@ def _built_in(
+     return graph
+ 
+ 
++class _NoReplay(Exception):
++    """Why a graph is not run as a CUDA graph."""
++
++
++# How many recordings a graph may have that read their inputs in the memory
++# a call had them in, and at which sighting of such memory one is made.
++_MOST_PLACES = 4
++_PLACE_SEEN = 3
++
++
++def _devices_of(value: Any) -> set[torch.device] | None:
++    """The devices of the tensors a node of a graph stands for; None if it
++    stands for something else than tensors and plain values, or for a tensor
++    whose size is a symbol."""
++    if isinstance(value, torch.Tensor):
++        if any(type(size) is not int for size in value.shape):
++            return None
++        return {value.device}
++    if type(value) in (tuple, list):
++        found: set[torch.device] = set()
++        for item in value:
++            inner = _devices_of(item)
++            if inner is None:
++                return None
++            found |= inner
++        return found
++    return set() if type(value) in _VALUES else None
++
++
++def _replayable(
++    graph: torch.fx.GraphModule,
++) -> tuple[list[int], list[bool], torch.device]:
++    """Whether the kernels of a graph are the same kernels on the same memory
++    at every call, so that a CUDA graph of one call is every call
++    (``_Replay``). Returns which inputs the graph reads, which of its results
++    do not depend on an input, and the GPU; raises ``_NoReplay`` otherwise.
++
++    A CUDA graph holds the work of one GPU and nothing else. So everything
++    that depends on an input has to be on that GPU; what is computed on the
++    CPU has to follow from constants alone, which makes it what it was when
++    the graph was recorded; no operation takes tensors of two devices (a
++    copy from the host would be replayed from memory that may be gone); and
++    there is neither a size that is a symbol, nor an operation whose kernels
++    depend on what a tensor holds, nor one that draws random numbers.
++    """
++    from torch._inductor.utils import get_first_incompatible_cudagraph_node
++
++    values: dict[torch.fx.Node, set[torch.device]] = {}
++    moving: set[torch.fx.Node] = set()
++    gpus: set[torch.device] = set()
++    placeholders = []
++    results: Any = None
++    for node in graph.graph.nodes:
++        if node.op == "output":
++            results = node.args[0]
++            continue
++        if node.op == "get_attr":
++            try:
++                held: Any = operator.attrgetter(node.target)(graph)
++            except AttributeError:
++                held = None
++            devices = _devices_of(held) if isinstance(held, torch.Tensor) else None
++        else:
++            devices = _devices_of(node.meta.get("val", node))
++        if devices is None:
++            raise _NoReplay(f"{node.name} is no tensor of a known size")
++        values[node] = devices
++        if node.op == "placeholder":
++            placeholders.append(node)
++            moving.add(node)
++            if node.users:
++                gpus |= devices
++            continue
++        if getattr(node.target, "_nondeterministic_seeded", False):
++            # Recording and the replay that checks it would each draw from
++            # the generator, and leave it further on than one call does.
++            raise _NoReplay(f"{node.name} draws random numbers")
++        given = node.all_input_nodes
++        touched = set(devices).union(*[values[n] for n in given])
++        constant = node.op == "get_attr" or (
++            node.op == "call_function"
++            and not node.is_impure(True)
++            and not any(n in moving for n in given)
++        )
++        if not constant:
++            moving.add(node)
++        if len(touched) > 1:
++            raise _NoReplay(f"{node.name} takes tensors of more than one device")
++        if any(device.type != "cuda" for device in touched):
++            if not constant:
++                raise _NoReplay(f"{node.name} is work of the CPU")
++        else:
++            gpus |= touched
++    if len(gpus) != 1 or next(iter(gpus)).type != "cuda":
++        raise _NoReplay("not the work of one GPU")
++    unsafe = get_first_incompatible_cudagraph_node(graph)
++    if unsafe is not None:
++        raise _NoReplay(f"{unsafe.name} cannot be part of a CUDA graph")
++    if type(results) not in (tuple, list) or not all(
++        isinstance(result, torch.fx.Node) for result in results
++    ):
++        raise _NoReplay("gives something else than tensors")
++    used = [i for i, node in enumerate(placeholders) if node.users]
++    return used, [result not in moving for result in results], next(iter(gpus))
++
++
++def _same_tensor(a: torch.Tensor, b: torch.Tensor) -> bool:
++    if a.shape != b.shape or a.dtype != b.dtype or a.device != b.device:
++        return False
++    if a.stride() != b.stride() or a.is_inference() != b.is_inference():
++        return False
++    if torch.equal(a, b):
++        return True
++    if not a.is_floating_point() and not a.is_complex():
++        return False
++    return bool(((a == b) | (a.isnan() & b.isnan())).all())
++
++
++class _Replay:
++    """What a backend made of a graph, run as a CUDA graph.
++
++    On a GPU a call of a compiled graph is a few hundred kernel launches, and
++    for a model of small layers the CPU takes longer to make them than the
++    GPU to run them. A CUDA graph is the launches of one call, recorded:
++    replaying it starts them all at once. It is the same kernels on the same
++    memory every time, so the inputs of a call are copied to where the
++    recorded call had its inputs, and the results are copies of what the
++    recorded call left where it had its results: every call gets tensors of
++    its own, as it does from the code itself. A caller that hands over the
++    same memory again and again (one buffer it fills, a few it goes round)
++    gets a recording that reads the inputs where they are, and no copy.
++
++    The code itself runs the first call (kernels are chosen and loaded then),
++    and the second, which is then recorded and replayed once: unless the
++    replay gives what the code gave, bit for bit, on the same tensors, in the
++    same layout, and neither wrote to an input nor gave back memory of an
++    input or one result in the memory of another, the code goes on running
++    every call. So it does when gradients are recorded, under a torch
++    function or dispatch mode, while the caller is recording a CUDA graph of
++    its own, and while another thread is replaying.
++    ``_replayable`` says what a graph has to be like before any of this.
++    """
++
++    __slots__ = (
++        "calls",
++        "compiled",
++        "constant",
++        "device",
++        "inplace",
++        "lock",
++        "off",
++        "recordings",
++        "seen",
++        "used",
++    )
++
++    def __init__(
++        self,
++        compiled: Callable[..., Any],
++        used: list[int],
++        constant: list[bool],
++        device: torch.device | None,
++        off: str | None,
++    ) -> None:
++        self.compiled = compiled
++        self.used = used
++        self.constant = constant
++        self.device = device
++        # Why the code runs every call, once that is known.
++        self.off = off
++        self.calls = 0
++        # By whether the call is under inference mode, whose tensors are
++        # not those of other calls: the CUDA graph, where its inputs are
++        # (with their place among those of a call), and where its results.
++        self.recordings: dict[bool, tuple[Any, list[Any], list[torch.Tensor]]] = {}
++        # Recordings that read the inputs where a call had them, by where
++        # that was (see ``place``), and how often a place was seen.
++        self.inplace: dict[Any, tuple[Any, list[Any], list[torch.Tensor]]] = {}
++        self.seen: dict[Any, int] = {}
++        self.lock = threading.Lock()
++
++    def state(self) -> str:
++        if self.off is not None:
++            return self.off
++        return "recorded" if self.recordings else "waiting"
++
++    def __call__(self, *args: Any) -> Any:
++        if (
++            self.off is not None
++            or torch.is_grad_enabled()
++            or _function_stack()
++            or torch._C._len_torch_dispatch_stack()
++            or torch.cuda.is_current_stream_capturing()
++        ):
++            return self.compiled(*args)
++        recording = self.recordings.get(torch.is_inference_mode_enabled())
++        if recording is None:
++            return self.record(args)
++        if not self.lock.acquire(False):
++            return self.compiled(*args)
++        try:
++            place = self.place(args)
++            found = self.inplace.get(place)
++            if found is not None:
++                # The inputs are in the memory a recording reads them from.
++                found[0].replay()
++                return [result.clone() for result in found[2]]
++            if place is not None and len(self.inplace) < _MOST_PLACES:
++                count = self.seen[place] = self.seen.get(place, 0) + 1
++                if len(self.seen) > 64:
++                    self.seen.clear()
++                if count == _PLACE_SEEN:
++                    return self.record_inplace(place, args)
++            graph, inputs, results = recording
++            for static, position in inputs:
++                arg = args[position]
++                if arg.shape != static.shape or arg.dtype != static.dtype:
++                    break
++                static.copy_(arg)
++            else:
++                graph.replay()
++                return [result.clone() for result in results]
++        finally:
++            self.lock.release()
++        return self.compiled(*args)
++
++    def place(self, args: tuple[Any, ...]) -> Any:
++        """Where the inputs the graph reads are, and how they lie there: a
++        call whose inputs are in the same memory in the same way (a caller
++        that fills one buffer, or goes round a few) can be replayed from a
++        recording that reads them there, without the copy. None for inputs
++        that are not dense tensors of the GPU."""
++        try:
++            parts: list[Any] = [torch.is_inference_mode_enabled()]
++            for position in self.used:
++                arg = args[position]
++                if arg.device != self.device or arg.layout is not torch.strided:
++                    return None
++                parts += [arg.data_ptr(), arg.shape, arg.stride(), arg.dtype]
++            return tuple(parts)
++        except Exception:
++            return None
++
++    def record_inplace(self, place: Any, args: tuple[Any, ...]) -> Any:
++        """Records the code on the inputs of this call themselves. Only
++        after a recording on copies showed that it writes to no input and
++        gives back no memory of one; and checked like that one."""
++        expected = self.compiled(*args)
++        try:
++            self.inplace[place] = self.capture(args, expected, False)
++        except Exception:
++            # The recording on copies goes on serving such calls.
++            self.seen[place] = _PLACE_SEEN + 1
++        return expected
++
++    def record(self, args: tuple[Any, ...]) -> Any:
++        expected = self.compiled(*args)
++        self.calls += 1
++        if self.calls < 2 or not self.lock.acquire(False):
++            return expected
++        try:
++            self.recordings[torch.is_inference_mode_enabled()] = self.capture(
++                args, expected
++            )
++        except Exception as e:
++            reason = e if isinstance(e, _NoReplay) else f"{type(e).__name__}: {e}"
++            self.off = str(reason).split("\n")[0][:200]
++        finally:
++            self.lock.release()
++        return expected
++
++    def capture(
++        self, args: tuple[Any, ...], expected: Any, copies: bool = True
++    ) -> tuple[Any, list[Any], list[torch.Tensor]]:
++        """Records the code on copies of ``args`` (or, without ``copies``,
++        on ``args`` themselves), and replays it: what that gives has to be
++        ``expected``, which the code gave for them."""
++        device = self.device
++        if type(expected) not in (tuple, list) or len(expected) != len(self.constant):
++            raise _NoReplay("gives something else than the tensors of its graph")
++        if not all(isinstance(arg, torch.Tensor) for arg in args):
++            raise _NoReplay("takes something else than tensors")
++        given = list(args)
++        inputs = []
++        for position in self.used:
++            arg = args[position]
++            if arg.device != device or arg.layout is not torch.strided:
++                raise _NoReplay("an input is not a dense tensor on its GPU")
++            static = arg.detach().clone() if copies else arg
++            if static.stride() != arg.stride():
++                raise _NoReplay("an input is not laid out as a copy of it is")
++            inputs.append((static, position))
++            given[position] = static
++        versions = [static._version for static, _ in inputs]
++        torch.cuda.synchronize(device)
++        graph = torch.cuda.CUDAGraph()
++        with torch.cuda.device(device), torch.cuda.graph(graph):
++            results = self.compiled(*given)
++        del given
++        if type(results) not in (tuple, list) or len(results) != len(expected):
++            raise _NoReplay("gives something else when it is recorded")
++        graph.replay()
++        if versions != [static._version for static, _ in inputs]:
++            raise _NoReplay("writes to an input")
++        memory = {static.untyped_storage()._cdata for static, _ in inputs}
++        for result, wanted, constant in zip(results, expected, self.constant):
++            if type(result) is not torch.Tensor or type(wanted) is not torch.Tensor:
++                raise _NoReplay("gives something else than plain tensors")
++            if result.requires_grad or result.layout is not torch.strided:
++                raise _NoReplay("gives a tensor that is not a plain dense one")
++            if not constant and result.device != device:
++                raise _NoReplay("gives a tensor of another device")
++            storage = result.untyped_storage()._cdata
++            if storage in memory:
++                raise _NoReplay("gives memory of an input, or the same memory twice")
++            memory.add(storage)
++            if not _same_tensor(result, wanted):
++                raise _NoReplay("replayed, it gives something else")
++            if result.clone().stride() != result.stride():
++                raise _NoReplay("gives a tensor that is not laid out as a copy of it is")
++        return graph, inputs if copies else [], list(results)
++
++
+ def _inductor_frozen(
+     graph: torch.fx.GraphModule, inputs: list[Any]
+ ) -> Callable[..., Any]:
+@@ -4407,6 +4857,7 @@ def make_pass(
+     warmup: int,
+     freeze: bool = True,
+     passes: tuple[Callable[..., Any], ...] = (),
++    cuda_graphs: bool = False,
+ ) -> Regions:
+     global _runtime
+     if isinstance(backend, str):
+@@ -4414,4 +4865,4 @@ def make_pass(
+             raise ValueError(f"unknown backend {backend!r}; known: {sorted(_BACKENDS)}")
+         backend = _BACKENDS[backend]
+     _runtime = runtime
+-    return Regions(backend, min_ops, max_variants, warmup, freeze, passes)
++    return Regions(backend, min_ops, max_variants, warmup, freeze, passes, cuda_graphs)
+diff --git a/torch/vm/passes.py b/torch/vm/passes.py
+index aadd79d..522cb10 100644
+--- a/torch/vm/passes.py
++++ b/torch/vm/passes.py
+@@ -143,6 +143,18 @@ class Graphs(BuiltinPass):
+             does not see the writes to (shared with another process, or a NumPy
+             array's). ``regions()`` reports ``frozen`` per region. On by
+             default (``TORCH_VM_FREEZE=0`` turns it off).
++        cuda_graphs: run what the backend made of a graph as a CUDA graph
++            where the graph is the work of one GPU: the kernel launches of a
++            call are recorded once and replayed, which takes the time the CPU
++            needs to make them out of a call. The inputs of a call are copied
++            to where the recorded call had them and every call gets copies of
++            the results, so the tensors of a call stay what they are when the
++            next one runs; the memory of the recorded call is kept. A graph
++            with work on the CPU that depends on its inputs, with sizes left
++            open, that writes to its inputs, or whose replay does not give
++            what its code gives, runs as it does without this, and so does a
++            call that records gradients. ``regions()`` reports ``cuda_graphs``
++            per region. Off by default.
+     """
+ 
+     engine: ClassVar[str] = "graphs"
+@@ -153,6 +165,7 @@ class Graphs(BuiltinPass):
+     min_ops: int = 4
+     max_variants: int = 32
+     freeze: bool | None = None
++    cuda_graphs: bool = False
+ 
+ 
+ @dataclasses.dataclass(frozen=True, repr=False)

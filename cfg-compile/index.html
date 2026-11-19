@@ -449,9 +449,10 @@ its module had been looked at (<a href="https://github.com/pytorch/pytorch/pull/
 <ul>
 <li><strong>opacus_cifar10</strong> (2.80): a hook on every layer, and a region refuses a module with
 hooks, so the model runs at the speed of eager.</li>
-<li><strong>yolov3</strong> (2.50; 1.66): its forward goes round a loop over a hundred
-layers and appends each output to a list. A region does not go round such a loop, so every layer is a graph of its own: 73 variants of 7
-operations.</li>
+<li><strong>yolov3</strong> (2.50; 1.66): its forward goes round a loop over a hundred layers and appends each output to a list. A region does not go round such a loop, so every layer is a graph of its own: 73 variants of 7 operations.
+<em>Corrected the same day:</em> in inference the loop is not what ends the region. The model assigns two buffers on every call, and a region refused a store into a module's buffer; with that allowed the whole model is one graph
+and <code>torch.vm</code> goes from 1.00x to 2.5x of eager. <a href="../two-compilers-one-model/">One model, two compilers</a> has the fix (not in the stack yet) and what three hours of an agent's work then buys in each compiler on this model.
+In training the model is still a graph per layer, and why has not been found.</li>
 <li><strong>vision_maskrcnn</strong> (1.20; 1.35): 29 graphs, cut where
 a size depends on data or a list from before the region is appended to.</li>
 <li><strong>AllenaiLongformerBase</strong> (1.28; 1.14):
@@ -835,8 +836,8 @@ calls are behind.</li>
 <li><strong>Guard what a region reads from a container that is no input of it.</strong> <code>x * len(CFG)</code> with a
 global <code>CFG</code> is a graph with the length built in, and is wrong once <code>CFG</code> grows; <code>torch.compile</code> guards
 such reads. It is a property of the graph pass, which is asked for, not of the default; it is still a wrong result.</li>
-<li><strong>Stores and loops that end a region.</strong> A store in a dict that a module keeps (drq), and a loop over a hundred layers
-that appends to a list (yolov3), which are the two largest gaps the dashboard's suites show after modules with hooks (section 9).</li>
+<li><strong>Stores and loops that end a region.</strong> A store in a dict that a module keeps (drq), and in yolov3 a store into a module's buffer on every call (taken at first for its loop over a hundred layers; <a href="../two-compilers-one-model/">One model, two compilers</a>),
+which are the two largest gaps the dashboard's suites show after modules with hooks (section 9).</li>
 <li><strong>Review and land from the bottom.</strong> The five PRs with CI are the dispatcher hook; everything above depends on a
 decision about whether this front end is wanted. Several PRs above are larger than a reviewer should be asked to read.</li>
 <li><strong>Report the cm3leon_generate finding upstream.</strong> A benchmark whose weights are unwritten zeros reads one page of
