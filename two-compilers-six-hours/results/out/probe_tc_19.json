@@ -1,0 +1,57 @@
+{
+ "label": "tc #19: 3404 img/s: FIXED SOURCE (conv change no longer creates a by-value constant from a frozen weight; see journal 01:24Z). Sound freezing: version-counter guard + freezing + max_autotune + cat<=2 + inplace_buffers=False, CUDA graphs with trees, NO guard filter, recompile_limit=32. Not followed: writes through .data. Replaces the 00:33 row, which ran with a stale first-conv weight",
+ "tree": "/home/dev/local/hill/acc/trees/tc_19",
+ "config": "/home/dev/local/hill/acc/trees/tc_19/hill_config.py",
+ "rmse_against_eager_before": 0.07260979815202004,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.1228710321225765,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5950246498390344,
+   "off_by": 0.07904024661318015,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5915301554982599,
+   "off_by": 0.07227872552134093,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8799074299206139,
+   "off_by": 0.07159427538599732,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.08962750024646317,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06894339917021232,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08168877528909964,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.12361029322068282,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

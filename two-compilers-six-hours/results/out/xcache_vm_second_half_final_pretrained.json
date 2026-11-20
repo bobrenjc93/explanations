@@ -1,0 +1,96 @@
+{
+ "label": "vm_second_half_final",
+ "tree": "/home/dev/local/hill/acc/trees/vm_24",
+ "config": "/home/dev/local/hill/acc/trees/vm_24/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7586135028866181,
+  "precision": 0.5572667102678094,
+  "recall": 0.7904441118277347
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7526878041153937,
+  "precision": 0.5546417098114325,
+  "recall": 0.7897577486275332
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7522721254368225,
+  "precision": 0.5521767959750085,
+  "recall": 0.7854393840148601
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 721,
+   "found": 710,
+   "missing": 11,
+   "extra": 5,
+   "largest_score_difference": 0.02783203125,
+   "largest_box_shift_px": 24.949817657470703
+  },
+  "detections_iou_0.5": {
+   "detections": 721,
+   "found": 712,
+   "missing": 9,
+   "extra": 3,
+   "largest_score_difference": 0.02783203125,
+   "largest_box_shift_px": 24.949817657470703
+  },
+  "raw_output": {
+   "rmse": 0.07538627375473061,
+   "largest": 30.0,
+   "rms_of_reference": 41.326301000942685
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 590,
+   "missing": 138,
+   "extra": 125,
+   "largest_score_difference": 0.05303269624710083,
+   "largest_box_shift_px": 10.548019409179688
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 710,
+   "missing": 18,
+   "extra": 5,
+   "largest_score_difference": 0.05303269624710083,
+   "largest_box_shift_px": 10.548019409179688
+  },
+  "raw_output": {
+   "rmse": 0.09182117076429205,
+   "largest": 16.68756103515625,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 590,
+   "missing": 138,
+   "extra": 131,
+   "largest_score_difference": 0.02520066499710083,
+   "largest_box_shift_px": 26.341060638427734
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 714,
+   "missing": 14,
+   "extra": 7,
+   "largest_score_difference": 0.02520066499710083,
+   "largest_box_shift_px": 26.341060638427734
+  },
+  "raw_output": {
+   "rmse": 0.1015190168455908,
+   "largest": 24.903839111328125,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.327310403142356
+ },
+ "ms_per_batch_with_copy_out": 21.18983760010451
+}

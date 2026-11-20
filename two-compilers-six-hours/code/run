@@ -1,0 +1,23 @@
+#!/bin/bash
+# run SIDE [--gpu] COMMAND...: a command in the environment of one side of the experiment (tc or vm).
+# Without --gpu the command does not see the GPU and runs on the side's own cores. With --gpu it waits for
+# the GPU lock (one GPU job at a time over both sides), runs on the benchmark cores, and is stopped after 15 min.
+SIDE=$1; shift
+H=/home/dev/local/hill
+case "$SIDE" in tc|vm) ;; *) echo "run: SIDE is tc or vm" >&2; exit 2;; esac
+export PATH=/home/dev/local/g/pytorch-env/bin:$HOME/.cargo/bin:$PATH
+export TORCHINDUCTOR_CACHE_DIR=$H/$SIDE/cache
+if [ "$SIDE" = tc ]; then export PYTHONPATH=$H/tc/boot; CORES=12-23; else unset PYTHONPATH; CORES=24-35; fi
+if [ "$1" = --gpu ]; then
+  shift
+  exec 9>$H/gpu.lock
+  T0=$(date +%s)
+  flock 9
+  T1=$(date +%s)
+  timeout 900 taskset -c 0-11 python3 -I /home/dev/local/cfgloop/guard/safe_run.py 64 "$@"
+  RC=$?
+  echo "$(date -u +%FT%TZ) $SIDE waited $((T1 - T0)) held $(( $(date +%s) - T1 )) rc $RC: $*" | cut -c1-300 >> $H/$SIDE/gpu.log
+  exit $RC
+else
+  CUDA_VISIBLE_DEVICES="" exec taskset -c $CORES "$@"
+fi

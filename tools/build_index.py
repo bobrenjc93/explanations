@@ -33,6 +33,7 @@ TAGS = {
     "cfg-compile": ["PyTorch", "compilers", "torch.compile", "benchmarks"],
     "frame-stack-chunks": ["PyTorch", "CPython", "benchmarks", "debugging"],
     "two-compilers-one-model": ["PyTorch", "compilers", "torch.compile", "experiment", "AI agents"],
+    "two-compilers-six-hours": ["PyTorch", "compilers", "torch.compile", "experiment", "AI agents"],
 }
 
 

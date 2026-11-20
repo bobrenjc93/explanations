@@ -1,0 +1,7 @@
+{
+ "label": "tc_second_half_final",
+ "at first": 3626.5878604953414,
+ "after a batch of 3 images": 3622.0342901061067,
+ "after images of another size": 3612.466828134089,
+ "after a weight was updated in place": 3600.622180513743
+}

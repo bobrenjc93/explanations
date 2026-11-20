@@ -1,0 +1,57 @@
+{
+ "label": "vm #19: 4599 img/s: source: a path's trace may store plain values in module attributes (kept as effects, the variant keyed on what they held), so another image size no longer runs the model's instructions; no change in the timed path",
+ "tree": "/home/dev/local/hill/acc/trees/vm_19",
+ "config": "/home/dev/local/hill/acc/trees/vm_19/hill_config.py",
+ "rmse_against_eager_before": 0.07228232155456397,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.12156714146762122,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5940015153988939,
+   "off_by": 0.07895681948924486,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5923968550007377,
+   "off_by": 0.07167929279994087,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8794924338209396,
+   "off_by": 0.07478302983137863,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.05831451092715234,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06852972970738992,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08170384150802913,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.12149358289317483,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

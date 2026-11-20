@@ -1,0 +1,7 @@
+{
+ "label": "vm_second_half_final",
+ "at first": 4613.325012457147,
+ "after a batch of 3 images": 4587.1235577625275,
+ "after images of another size": 4539.278241442951,
+ "after a weight was updated in place": 4525.424540737034
+}

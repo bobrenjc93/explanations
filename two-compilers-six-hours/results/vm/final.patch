@@ -1,0 +1,1134 @@
+diff --git a/torch/vm/__init__.py b/torch/vm/__init__.py
+index acbaef5..2c718b0 100644
+--- a/torch/vm/__init__.py
++++ b/torch/vm/__init__.py
+@@ -479,6 +479,7 @@ def vm(
+             0,
+             freeze,
+             tuple(over_graph),
++            found.cuda_graphs,
+         )
+         block[0] = regions
+     try:
+diff --git a/torch/vm/_regions.py b/torch/vm/_regions.py
+index c9843db..0fa5cb3 100644
+--- a/torch/vm/_regions.py
++++ b/torch/vm/_regions.py
+@@ -43,7 +43,16 @@ classes, and tuples, lists, dicts, pytree nodes and plain objects of those
+ runs on copies of the lists, dicts and objects, so that what the code does to
+ them shows: storing an item or an attribute is then something the region does
+ to the real ones after its graph has run (``_Variant.effects``), as is
+-storing a tensor in an attribute of a module that held one. An instruction
++storing a tensor in an attribute or a buffer of a module that held one (a
++call after such a store is told to be like the one before by describing the
++call again once it has run, ``_Region.foresee``). The trace of a region that
++goes on into other blocks may also store a number or a string in an attribute
++of a module that holds one (the size of a grid a layer keeps): the region
++does that store after its graph as well, and what such attributes held before
++the call is part of the key of the variant (``_Region.stated``), since what
++is stored may follow from it; an attribute that never comes to rest (a count
++of calls) is left to the VM. A buffer that holds None may be given None. An
++instruction
+ that takes anything else from before the region stays with the VM. What a
+ region gives back may also be an object it made itself, which every call then
+ makes again from the results of the graph (``_Recipes``).
+@@ -85,6 +94,14 @@ operation on the tensor itself still moves it to other memory; on a GPU,
+ where a tensor that shares its memory is slower to read, its storage is
+ asked to tell of such a write instead (``_watched``). A variant whose tensors
+ changed is made again with those as inputs.
++
++With ``cuda_graphs`` what the backend made of a graph that is the work of
++one GPU is recorded as a CUDA graph on its second call and replayed from then
++on, on copies of the inputs and with copies of the results handed back
++(``_Replay``, and ``_replayable`` for which graphs). A caller that hands over
++its inputs in the same memory again gets a recording that reads them there,
++and such a recording is started as soon as the region is called, while the
++call is still being looked at (``_Replay.ahead``).
+ """
+ 
+ import ast
+@@ -134,6 +151,17 @@ class _Capped(_Failed):
+     pass
+ 
+ 
++class _Restless(_Failed):
++    # A region stores another value in an attribute of a module at every
++    # call (``_NeverAtRest``): no graph is for the next call.
++    pass
++
++
++class _NeverAtRest(Untraceable):
++    """An attribute of a module that a call like this one left as it is now
++    is stored over again."""
++
++
+ class _Dependent(Exception):
+     """A trace on the numbers of a call came to a size or a number that only
+     what a tensor holds decides (``nonzero``, a mask as an index, ``item``).
+@@ -162,6 +190,9 @@ class _State(threading.local):
+     # own code is in making text of a size.
+     opening: "_Open | None" = None
+     texting = 0
++    # A CUDA graph that was started for the call in progress before the call
++    # was looked at, and where the inputs it reads were (``_Replay.ahead``).
++    ahead: Any = None
+ 
+ 
+ _state = _State()
+@@ -565,6 +596,9 @@ _DERIVED = (sys.intern("_flat_weights"), sys.intern("_flat_weight_refs"))
+ 
+ # The dicts of a module that are changed in place.
+ _MODULE_DICTS = ("_parameters", "_buffers", "_modules", *_HOOK_DICTS)
++# What an attribute of a module may hold for a trace of a path to store
++# something else of these in it.
++_STORED = frozenset({int, float, bool, str, type(None)})
+ # The methods that change a module. A trace of a region that was given the
+ # module must not run one: the instructions will, when they run for real.
+ _MODULE_CHANGES = {
+@@ -592,28 +626,89 @@ def _module_change_started(code: types.CodeType, offset: int) -> None:
+     if id(module) not in traced:
+         return
+     name = _MODULE_CHANGES[code]
++    watch = _state.watch
++    attribute: Any = arguments.get("name")
+     if name == "__setattr__":
+-        attribute: Any = arguments.get("name")
+         if isinstance(module, nn.RNNBase) and attribute in _DERIVED:
+             # Derived from the parameters, which the trace replaced: put
+             # back when the trace is over (see ``_Watch``).
+             return
+-        current = vars(module).get(attribute, module)
++        held = _keeper(module, attribute)
++        current = held.get(attribute, module)
+         value: Any = arguments.get("value", code)
+-        if current is value:
++        plain = watch.plain if watch is not None else None
++        if (
++            plain is not None
++            and held is vars(module)
++            and type(value) in _STORED
++            and type(current) in _STORED
++            and attribute != "training"
++        ):
++            # A number or a string an attribute holds gets another (the size
++            # of a grid a layer keeps). The trace goes on; the region stores
++            # what the attribute is left with after its graph, and the
++            # variant is for what the attribute held before the call
++            # (``_Region.stated``), since what is stored may follow from it.
++            # Not an attribute that a call like this one left as it is now
++            # and that is stored over again: a count of calls never comes to
++            # rest, and every call would be a graph of its own.
++            last = watch.unsettled.get((id(held), attribute), watch)
++            restless = (
++                last is not watch
++                and type(last) is type(current)
++                and last == current
++                and (type(value) is not type(current) or value != current)
++            )
++            if not restless:
++                plain.setdefault((id(held), attribute), (module, attribute, current))
++                return
++            raise _NeverAtRest(f"{name} on a module the region was given")
++        elif current is value and held is vars(module):
++            return
++        if watch is not None and value is None and current is None and held is not vars(module):
++            # A buffer that holds nothing is given nothing (a grid a layer
++            # only builds for inference): ``Module.__setattr__`` registers it
++            # anew as it is, which is let through below.
++            watch.idle.add((id(held), attribute))
+             return
+-        watch = _state.watch
+         if watch is not None and type(value) is FakeTensor:
+             if type(current) is FakeTensor or type(current) in _TENSORS:
+-                # A tensor the module keeps as a plain attribute (a mask it
+-                # builds, a cache) gets another tensor of the trace. The
+-                # trace goes on with it, and the region stores what the
+-                # graph computes for it when it has run (``_Watch.stored``).
+-                watch.stores[(id(vars(module)), attribute)] = (module, attribute)
++                # A tensor the module keeps as a plain attribute or as a
++                # buffer (a mask it builds, a cache, a grid) gets another
++                # tensor of the trace. The trace goes on with it, and the
++                # region stores what the graph computes for it when it has
++                # run (``_Watch.stored``).
++                watch.stores[(id(held), attribute)] = (module, attribute)
+                 return
++    elif name == "register_buffer" and watch is not None:
++        # What ``Module.__setattr__`` makes of a store into a buffer that was
++        # let through above: the same store, with the buffer as persistent as
++        # it was. A hook on registrations is code a graph does not hold.
++        buffers = vars(module).get("_buffers")
++        registered = (id(buffers), attribute) in watch.stores
++        if (id(buffers), attribute) in watch.idle and arguments.get("tensor", module) is None:
++            registered = True
++        transient = vars(module).get("_non_persistent_buffers_set", ())
++        as_before = bool(arguments.get("persistent", True)) == (
++            attribute not in transient
++        )
++        hooks = torch.nn.modules.module._global_buffer_registration_hooks
++        if registered and as_before and not hooks:
++            return
+     raise Untraceable(f"{name} on a module the region was given")
+ 
+ 
++def _keeper(module: nn.Module, name: str) -> dict[str, Any]:
++    """The dict of a module that a store of a tensor under ``name`` goes to:
++    its buffers if it has one of that name, else its attributes."""
++    attributes = vars(module)
++    if name not in attributes:
++        buffers = attributes.get("_buffers")
++        if type(buffers) is dict and name in buffers:
++            return buffers
++    return attributes
++
++
+ def _watch_module_changes(on: bool) -> None:
+     """Has the methods that change a module report to the trace, or stops it.
+ 
+@@ -660,6 +755,14 @@ class _Watch:
+         # Attributes that hold a tensor and were given another one of the
+         # trace, by the dict they are in and their name.
+         self.stores: dict[tuple[int, str], tuple[nn.Module, str]] = {}
++        # Attributes that hold a plain value and were given another, with
++        # what they held before; None unless the trace is one that may have
++        # them (``_Path.trace``).
++        self.plain: dict[tuple[int, str], tuple[nn.Module, str, Any]] | None = None
++        # What traces for calls like this one left such attributes with.
++        self.unsettled: dict[tuple[int, str], Any] = {}
++        # Buffers that hold None and were given None.
++        self.idle: set[tuple[int, str]] = set()
+         self.saved: list[tuple[dict[Any, Any], dict[Any, Any]]] = []
+         for module in self.modules:
+             for m in module.modules():
+@@ -680,7 +783,7 @@ class _Watch:
+         now = self.stamp()
+         if now == self.before:
+             return False
+-        if self.stores and not self.changed_otherwise():
++        if (self.stores or self.plain) and not self.changed_otherwise():
+             self.before = now
+             return False
+         return True
+@@ -693,7 +796,9 @@ class _Watch:
+             for key, value in saved.items():
+                 if held.get(key, self) is value or key in _DERIVED:
+                     continue
+-                if (id(held), key) not in self.stores:
++                if (id(held), key) in self.stores:
++                    continue
++                if self.plain is None or (id(held), key) not in self.plain:
+                     return True
+         return False
+ 
+@@ -702,9 +807,15 @@ class _Watch:
+         before = {id(held): saved for held, saved in self.saved}
+         found = []
+         for (held, name), (module, _) in self.stores.items():
+-            value = vars(module).get(name)
++            value = _keeper(module, name).get(name)
+             if value is not before[held].get(name):
+                 found.append((module, name, value))
++        for module, name, held_before in (self.plain or {}).values():
++            value = vars(module).get(name, self)
++            if type(value) not in _STORED:
++                raise Untraceable(f"leaves {name} of a module something else than a plain value")
++            if type(value) is not type(held_before) or value != held_before:
++                found.append((module, name, value))
+         return found
+ 
+     def restore(self) -> None:
+@@ -1393,6 +1504,44 @@ def _rebuild(obj: Any, copies: _Copies) -> Any:
+     return obj
+ 
+ 
++def _way(obj: Any, target: Any, depth: int = 3) -> tuple[Any, ...] | None:
++    """Where ``target`` is in ``obj``: the steps to take, or None if it is
++    not found. A step is an index into a tuple or a list, or, for a
++    parameter or a buffer of a module or of one inside it, the names of the
++    modules to go through, the dict it is in and its name there."""
++    if obj is target:
++        return ()
++    if depth and type(obj) in (tuple, list):
++        for index, item in enumerate(obj):
++            rest = _way(item, target, depth - 1)
++            if rest is not None:
++                return (index, *rest)
++    if isinstance(obj, nn.Module):
++        for path, module in obj.named_modules():
++            for kind in ("_parameters", "_buffers"):
++                for name, value in vars(module).get(kind, {}).items():
++                    if value is target:
++                        return ((tuple(path.split(".")) if path else (), kind, name),)
++    return None
++
++
++def _along(obj: Any, way: tuple[Any, ...]) -> Any:
++    """What is at ``way`` in ``obj`` now, or None."""
++    for step in way:
++        if type(step) is int:
++            if type(obj) not in (tuple, list) or step >= len(obj):
++                return None
++            obj = obj[step]
++            continue
++        names, kind, name = step
++        for inner in names:
++            obj = vars(obj).get("_modules", {}).get(inner) if isinstance(obj, nn.Module) else None
++        if not isinstance(obj, nn.Module):
++            return None
++        obj = vars(obj).get(kind, {}).get(name)
++    return obj
++
++
+ def _same_items(now: list[Any], before: list[Any]) -> bool:
+     return len(now) == len(before) and all(a is b for a, b in zip(now, before))
+ 
+@@ -2079,6 +2228,9 @@ def _trace(fn: Callable[..., Any], example: list[Any], opening: _Open | None) ->
+     if isinstance(error, (_Failed, _Retry)):
+         raise error
+     reason = f"{type(error).__name__}: {error}".split("\n")[0][:200]
++    if isinstance(error, _NeverAtRest):
++        reason = "Untraceable" + reason[len(type(error).__name__) :]
++        raise _Restless(getattr(error, "cfg_index", None), reason) from None
+     raise _Failed(getattr(error, "cfg_index", None), reason) from None
+ 
+ 
+@@ -2525,6 +2677,7 @@ class _Variant:
+         "grows",
+         "guards",
+         "keep",
++        "layout",
+         "leap",
+         "numbers",
+         "moves",
+@@ -2536,6 +2689,7 @@ class _Variant:
+         "shape",
+         "stamp",
+         "state",
++        "stores",
+         "unwritten",
+         "watch",
+         "written",
+@@ -2568,6 +2722,8 @@ class _Variant:
+         # one of them with other items, keys or attributes than it had.
+         self.effects: list[Any] = []
+         self.grows = False
++        # Whether one of the effects is a tensor stored in a module.
++        self.stores = False
+         # For a variant that leaves sizes open: which calls it holds for
+         # (a ``ShapeGuard``), the same as text, and which of the integers of
+         # a call its graph takes after the tensors.
+@@ -2592,6 +2748,8 @@ class _Variant:
+         # What the tensors of the modules were (``_Inputs.known``) when those
+         # the graph has built in were last found to be what it was built with.
+         self.unwritten: list[tuple[int, _Known]] | None = None
++        # See ``covered``.
++        self.layout: tuple[Any, bool] | None = None
+ 
+     def run(self, inputs: _Inputs) -> Any:
+         flat, held = inputs.flat, inputs.held
+@@ -2617,6 +2775,7 @@ class _Variant:
+     def affects(self, effects: list[Any], grows: bool) -> None:
+         self.effects, self.grows = effects, grows
+         self.direct = self.direct and not effects
++        self.stores = any(effect[0] == "module" for effect in effects)
+ 
+     def freeze(
+         self, flat: list[torch.Tensor], positions: list[int], clones: list[torch.Tensor]
+@@ -2656,10 +2815,7 @@ class _Variant:
+             return None
+         tensors = self.state(inputs.flat)
+         if _runtime.tensor_stamp(tensors) == self.stamp:
+-            if known and all(
+-                any(first <= at < first + len(found.tensors) for first, found in known)
+-                for at in self.positions
+-            ):
++            if known and self.covered(known):
+                 self.unwritten = known
+             return None
+         self.unwritten = None
+@@ -2688,6 +2844,32 @@ class _Variant:
+         self.stamp = _runtime.tensor_stamp(tensors)
+         return None
+ 
++    def confirm(self, inputs: _Inputs) -> None:
++        """The part of ``stale`` that changes nothing: if what the graph has
++        built in is what the modules hold, and they were found as a look
++        left them, a later call that finds them so again need not ask.
++        Anything else is for ``stale`` to find, at the call it matters to."""
++        if self.state is None or not inputs.unwritten or not inputs.known:
++            return
++        tensors = self.state(inputs.flat)
++        if _runtime.tensor_stamp(tensors) == self.stamp:
++            if self.covered(inputs.known):
++                self.unwritten = inputs.known
++
++    def covered(self, known: list[tuple[int, _Known]]) -> bool:
++        """Whether every tensor the graph has built in is one of a module
++        that was found as a look had left it. That depends on where the
++        tensors of the modules are in the call, which is the same from call
++        to call: it is worked out once for each way they are laid out."""
++        layout = tuple([(first, len(found.tensors)) for first, found in known])
++        if self.layout is None or self.layout[0] != layout:
++            inside = all(
++                any(first <= at < first + count for first, count in layout)
++                for at in self.positions
++            )
++            self.layout = (layout, inside)
++        return self.layout[1]
++
+     def holds(self) -> bool:
+         """Whether what the path read is still what it was."""
+         for kind, owner, name, value in self.guards:
+@@ -2737,10 +2919,76 @@ class _Region:
+         self.usual: dict[int, Any] = {}
+         self.unusual = 0
+         self.settles = 0
++        # The recording whose kernels are started before a call is looked
++        # at, with where its inputs are in what the region is called with
++        # (``look_ahead``); how many times that was for nothing, and how
++        # many replays to wait before the next try.
++        self.ahead: tuple[Any, list[tuple[Any, ...]]] | None = None
++        self.missed = 0
++        self.patience = 0
++        # A recording some input of which was not found in what the region
++        # is called with.
++        self.nowhere: Any = None
++        # The plain attributes of modules that a trace of the region stored
++        # to (see ``stated``), and the key the last graph was made under.
++        self.kept: list[tuple[nn.Module, str]] = []
++        self.made_under: Any = None
++        # Per kind of call (its key but for that state): what the last trace
++        # left the attributes it stored another value in with; and the kind
++        # of the call that is being traced.
++        self.unsettled: dict[Any, dict[tuple[int, str], Any]] = {}
++        self.like: Any = None
+ 
+     def __call__(self, *args: Any) -> Any:
+         if not self.hot:
+             return self.cold(args)
++        ahead = self.ahead
++        if ahead is None:
++            return self.warm(args)
++        # The last call was replayed from a recording that reads its inputs
++        # in place. If this one has them in such a place too, its kernels
++        # are started now, and the call is looked at while they run.
++        replay, ways = ahead
++        outer = _state.ahead
++        _state.ahead = None
++        try:
++            tensors = [_along(args, way) for way in ways]
++            if all(type(tensor) in _TENSORS for tensor in tensors):
++                place = replay.ahead(tensors)
++                if place is not None:
++                    _state.ahead = (replay, place)
++            return self.warm(args)
++        finally:
++            pending = _state.ahead
++            _state.ahead = outer
++            if pending is not None:
++                # Not taken: the call was not what the last one was. Only
++                # after as many replays as it has started for nothing so far
++                # is one started ahead again.
++                pending[0].lock.release()
++                self.ahead = None
++                self.missed = min(self.missed + 1, 16)
++                self.patience = 1 << self.missed
++
++    def look_ahead(self, variant: "_Variant", args: tuple[Any, ...], flat: Any) -> None:
++        """After a call that a recording served: where, in what the region
++        is called with, the inputs are that its graph reads, so that the
++        next call can have its kernels started before it is looked at."""
++        replay = variant.compiled
++        if self.patience > 0:
++            self.patience -= 1
++            return
++        if variant.numbers or not replay.inplace or replay is self.nowhere:
++            return
++        taken = flat if variant.rest is None else variant.rest(flat)
++        ways = [_way(args, taken[position]) for position in replay.used]
++        if all(way is not None for way in ways):
++            self.ahead = (replay, ways)
++        else:
++            # Not looked for again at every call.
++            self.nowhere = replay
++
++    def warm(self, args: tuple[Any, ...]) -> Any:
+         inputs = _Inputs()
+         found = None
+         if self.usual:
+@@ -2796,9 +3044,44 @@ class _Region:
+             if not all(check.holds(flat[i]) for i, check in variant.checks):  # type: ignore[union-attr]
+                 return self.decline(args)
+         if variant.proven:  # type: ignore[union-attr]
+-            return variant.run(inputs)  # type: ignore[union-attr]
++            results = variant.run(inputs)  # type: ignore[union-attr]
++            if variant.stores and self.unusual < _MOST_UNUSUAL:  # type: ignore[union-attr]
++                self.foresee(args, variant)  # type: ignore[arg-type]
++            if self.ahead is None and type(variant.compiled) is _Replay:  # type: ignore[union-attr]
++                self.look_ahead(variant, args, inputs.flat)  # type: ignore[arg-type]
++            return results
+         return self.first_run(key, variant, args, inputs)  # type: ignore[arg-type]
+ 
++    def foresee(self, args: tuple[Any, ...], variant: "_Variant") -> None:
++        """After a call whose variant stored tensors in the modules it was
++        given (a grid a layer builds on every call): the next call finds
++        other tensors there than this one did, so it would not be like this
++        one, and would be described the long way, as would every call after
++        it. The call is described again here, as the modules are now, so
++        that the next one is like it. On a GPU that is after the kernels of
++        the call were launched, while they run, where the long way at the
++        start of the next call would be before its kernels. What the graph
++        has built in is checked against the tensors as they are now for the
++        same reason: a call that finds them as this look left them need not
++        check again (``_Variant.stale``)."""
++        try:
++            inputs = _Inputs()
++            key = self.key(args, inputs)
++            if not inputs.unwritten:
++                # That was the look at the tensors as they are now; what a
++                # call is like is told from one that finds them as a look
++                # left them.
++                inputs = _Inputs()
++                key = self.key(args, inputs)
++        except _Opaque:
++            return
++        usual = _usual(self.keyed(args), args, inputs, key)
++        if usual is not None:
++            if len(self.usual) >= _MOST_USUAL:
++                self.usual.clear()
++            self.usual[self.lead(args)] = usual
++            variant.confirm(inputs)
++
+     def settle(self, inputs: _Inputs) -> None:
+         """After a call that found a tensor of a module written to or in
+         other memory than when it was last looked at, and what the graph has
+@@ -2918,7 +3201,20 @@ class _Region:
+                 parts.append(_describe(arg, inputs))
+             except _Opaque as e:
+                 raise _Opaque(position, e.reason) from None
+-        return _key(parts, inputs)
++        return self.stated(_key(parts, inputs))
++
++    def stated(self, key: Any) -> Any:
++        """The key of a call with what the plain attributes hold that a
++        trace of the region stored to (``kept``): a variant is for one
++        state of them before the call, as it is for one kind of inputs. They
++        go with the modes: two keys that differ in them only differ in
++        values, and a region that finds new ones on every call (a counter)
++        is given up like one whose inputs take ever new values."""
++        if not self.kept:
++            return key
++        held = [vars(module).get(name) for module, name in self.kept]
++        state = tuple([(type(value), value) for value in held])
++        return (key[0], key[1], key[2], (*key[3], state))
+ 
+     def replay(self, args: tuple[Any, ...]) -> Any:
+         env = self.bind(args)
+@@ -3097,6 +3393,12 @@ class _Region:
+         growing = sum(1 for v in self.variants.values() if v is not None and v.grows)
+         try:
+             variant: _Variant | None = self.compile(key, args, inputs)
++        except _Restless as e:
++            # Not a region: the instruction that stores goes to the VM, and
++            # what is around it gets its turn.
++            self.hot = False
++            self.plan.split(self, None if e.index is None else {e.index: e.reason}, e.reason)
++            return None
+         except _Failed:
+             # These inputs do what the first ones did not: they run the
+             # instructions as they are.
+@@ -3383,7 +3685,8 @@ class _Region:
+             rest = [e for i, e in enumerate(example) if i not in taken]
+             try:
+                 with_weights = _built_in(graph, inputs.flat, frozen)
+-                compiled = _BUILDS_IN[options.backend](with_weights, rest)
++                replayed = options.replayed(with_weights)
++                compiled = replayed(_BUILDS_IN[options.backend](with_weights, rest))
+             except Exception:
+                 # The graph that takes its weights is still to be had.
+                 compiled = None
+@@ -3401,7 +3704,8 @@ class _Region:
+                 raise _Capped(None, "more graphs than a region may have")
+             example = opening.example() if opening is not None else list(inputs.flat)
+             try:
+-                compiled = options.backend(graph, example)
++                replayed = options.replayed(graph)
++                compiled = replayed(options.backend(graph, example))
+             except Exception as e:
+                 reason = f"{type(e).__name__}: {e}".split("\n")[0][:200]
+                 raise _Failed(None, f"the backend failed: {reason}") from None
+@@ -3701,7 +4005,7 @@ class _Path(_Region):
+                 parts.append(_describe(args[position], inputs))
+             except _Opaque as e:
+                 raise _Opaque(position, e.reason) from None
+-        return _key(parts, inputs)
++        return self.stated(_key(parts, inputs))
+ 
+     def decide(self, args: tuple[Any, ...]) -> None:
+         if self.unending(args):
+@@ -3727,7 +4031,8 @@ class _Path(_Region):
+         self, key: Any, args: tuple[Any, ...], inputs: _Inputs
+     ) -> _Variant | None:
+         variant = super().specialize(key, args, inputs)
+-        if variant is None:
++        if variant is None or (self.kept and key != self.made_under):
++            # The graph is under the key its trace ended with.
+             self.variants.pop(key, None)
+         return variant
+ 
+@@ -3761,6 +4066,7 @@ class _Path(_Region):
+         for _ in range(12):
+             inputs = _Inputs()
+             key = self.key(args, inputs, positions)
++            self.like = (key[0], key[1], key[2])
+             opening = self.open_for(key, inputs)
+             if opening is None and dependent:
+                 opening = _unopened(key, inputs)
+@@ -3781,7 +4087,7 @@ class _Path(_Region):
+                 self.sizes[_kind(key)].fixed |= close.slots
+                 continue
+             except _Failed as e:
+-                if opening is None or not opening.opened or isinstance(e, _Capped):
++                if opening is None or not opening.opened or isinstance(e, (_Capped, _Restless)):
+                     raise
+                 # What a trace on symbols cannot do, one on numbers may.
+                 self.sizes[_kind(key)].static = True
+@@ -3809,8 +4115,23 @@ class _Path(_Region):
+             self.variants.clear()
+             self.sizes.clear()
+             self.usual.clear()
++        if found.get("left"):
++            if len(self.unsettled) > 64:
++                self.unsettled.clear()
++            settled = self.unsettled.setdefault(self.like, {})
++            for held, name, value in found["left"]:
++                settled[(held, name)] = value
++        known = {(id(module), name) for module, name in self.kept}
++        more = [(m, name) for m, name in found.get("kept", ()) if (id(m), name) not in known]
++        if more:
++            # The keys so far say nothing of what these attributes held.
++            self.kept.extend(more)
++            self.variants.clear()
++            self.sizes.clear()
++            self.usual.clear()
+         final = _Inputs()
+         key = self.key(args, final)
++        self.made_under = key
+         self.sizes.setdefault(_kind(key), _Sizes(key[2]))
+         graph, checks = self.rewritten(graph, len(inputs.flat))
+         frozen = self.freezable(inputs, found["modules"], found["written"])
+@@ -3882,8 +4203,19 @@ class _Path(_Region):
+             )
+             try:
+                 with _swapped(modules, fakes), _traps(modules):
++                    if _state.watch is not None:
++                        _state.watch.plain = {}
++                        _state.watch.unsettled = self.unsettled.get(self.like, {})
+                     block, index = walk.run()
+                     stored = _state.watch.stored() if _state.watch is not None else []
++                    plain = _state.watch.plain if _state.watch is not None else None
++                    found["kept"] = [(m, name) for m, name, _ in (plain or {}).values()]
++                    found["left"] = [
++                        (id(vars(m)), name, vars(m).get(name))
++                        for m, name, before in (plain or {}).values()
++                        if vars(m).get(name) != before
++                        or type(vars(m).get(name)) is not type(before)
++                    ]
+             except Untraceable as e:
+                 if walk.entered and getattr(e, "cfg_index", None) is None:
+                     # One of the generators moved somewhere on the path.
+@@ -4056,12 +4388,16 @@ class Regions:
+         warmup: int,
+         freeze: bool = True,
+         passes: tuple[Callable[..., Any], ...] = (),
++        cuda_graphs: bool = False,
+     ) -> None:
+         self.backend = backend
+         self.min_ops = min_ops
+         self.max_variants = max_variants
+         self.warmup = warmup
+         self.freeze = freeze
++        # Whether what the backend makes of a graph that runs on one GPU is
++        # run as a CUDA graph (``_Replay``).
++        self.cuda_graphs = cuda_graphs
+         # The passes of the user's over the graph of a region
+         # (``(gm, input_types) -> gm``), applied before the backend gets it.
+         self.passes = passes
+@@ -4078,6 +4414,22 @@ class Regions:
+         # another region waited for each.
+         self.waiting: dict[Any, dict[_Region, int]] = {}
+ 
++    def replayed(
++        self, graph: torch.fx.GraphModule
++    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
++        """What turns the code a backend makes of ``graph`` into code that
++        runs it as a CUDA graph, if that was asked for and the graph can be
++        run so. Looked at before the backend gets the graph, which it may
++        change."""
++        if not self.cuda_graphs:
++            return lambda compiled: compiled
++        try:
++            used, constant, device = _replayable(graph)
++        except _NoReplay as e:
++            reason = str(e)
++            return lambda compiled: _Replay(compiled, [], [], None, reason)
++        return lambda compiled: _Replay(compiled, used, constant, device, None)
++
+     def wait(self, region: _Region) -> None:
+         self.waiting.setdefault(region.plan.function, {})[region] = 0
+ 
+@@ -4129,6 +4481,11 @@ class Regions:
+         for plan in self.plans:
+             for part in plan.regions:
+                 variants = [v for v in part.variants.values() if v is not None]
++                replays = [
++                    v.compiled.state()
++                    for v in variants
++                    if isinstance(v.compiled, _Replay)
++                ]
+                 entries.append(
+                     {
+                         "where": repr(part),
+@@ -4149,6 +4506,10 @@ class Regions:
+                         ],
+                     }
+                 )
++                if self.cuda_graphs:
++                    # Per variant: "recorded", "waiting", or why its graph
++                    # is not run as a CUDA graph.
++                    entries[-1]["cuda_graphs"] = replays
+             for index, reason in plan.bad.items():
+                 where = f"{plan.name}[{index}]"
+                 entries.append(
+@@ -4252,7 +4613,7 @@ def _written(
+     written = {i for i, f in enumerate(fake) if f._version != versions[i]}
+     where = {id(tensor): i for i, tensor in enumerate(flat)}
+     for module, name, _ in stored:
+-        position = where.get(id(vars(module).get(name)))
++        position = where.get(id(_keeper(module, name).get(name)))
+         if position is not None:
+             written.add(position)
+     return written
+@@ -4368,6 +4729,378 @@ def _built_in(
+     return graph
+ 
+ 
++class _NoReplay(Exception):
++    """Why a graph is not run as a CUDA graph."""
++
++
++# How many recordings a graph may have that read their inputs in the memory
++# a call had them in, and at which sighting of such memory one is made.
++_MOST_PLACES = 4
++_PLACE_SEEN = 3
++
++
++def _devices_of(value: Any) -> set[torch.device] | None:
++    """The devices of the tensors a node of a graph stands for; None if it
++    stands for something else than tensors and plain values, or for a tensor
++    whose size is a symbol."""
++    if isinstance(value, torch.Tensor):
++        if any(type(size) is not int for size in value.shape):
++            return None
++        return {value.device}
++    if type(value) in (tuple, list):
++        found: set[torch.device] = set()
++        for item in value:
++            inner = _devices_of(item)
++            if inner is None:
++                return None
++            found |= inner
++        return found
++    return set() if type(value) in _VALUES else None
++
++
++def _replayable(
++    graph: torch.fx.GraphModule,
++) -> tuple[list[int], list[bool], torch.device]:
++    """Whether the kernels of a graph are the same kernels on the same memory
++    at every call, so that a CUDA graph of one call is every call
++    (``_Replay``). Returns which inputs the graph reads, which of its results
++    do not depend on an input, and the GPU; raises ``_NoReplay`` otherwise.
++
++    A CUDA graph holds the work of one GPU and nothing else. So everything
++    that depends on an input has to be on that GPU; what is computed on the
++    CPU has to follow from constants alone, which makes it what it was when
++    the graph was recorded; no operation takes tensors of two devices (a
++    copy from the host would be replayed from memory that may be gone); and
++    there is neither a size that is a symbol, nor an operation whose kernels
++    depend on what a tensor holds, nor one that draws random numbers.
++    """
++    from torch._inductor.utils import get_first_incompatible_cudagraph_node
++
++    values: dict[torch.fx.Node, set[torch.device]] = {}
++    moving: set[torch.fx.Node] = set()
++    gpus: set[torch.device] = set()
++    placeholders = []
++    results: Any = None
++    for node in graph.graph.nodes:
++        if node.op == "output":
++            results = node.args[0]
++            continue
++        if node.op == "get_attr":
++            try:
++                held: Any = operator.attrgetter(node.target)(graph)
++            except AttributeError:
++                held = None
++            devices = _devices_of(held) if isinstance(held, torch.Tensor) else None
++        else:
++            devices = _devices_of(node.meta.get("val", node))
++        if devices is None:
++            raise _NoReplay(f"{node.name} is no tensor of a known size")
++        values[node] = devices
++        if node.op == "placeholder":
++            placeholders.append(node)
++            moving.add(node)
++            if node.users:
++                gpus |= devices
++            continue
++        if getattr(node.target, "_nondeterministic_seeded", False):
++            # Recording and the replay that checks it would each draw from
++            # the generator, and leave it further on than one call does.
++            raise _NoReplay(f"{node.name} draws random numbers")
++        given = node.all_input_nodes
++        touched = set(devices).union(*[values[n] for n in given])
++        constant = node.op == "get_attr" or (
++            node.op == "call_function"
++            and not node.is_impure(True)
++            and not any(n in moving for n in given)
++        )
++        if not constant:
++            moving.add(node)
++        if len(touched) > 1:
++            raise _NoReplay(f"{node.name} takes tensors of more than one device")
++        if any(device.type != "cuda" for device in touched):
++            if not constant:
++                raise _NoReplay(f"{node.name} is work of the CPU")
++        else:
++            gpus |= touched
++    if len(gpus) != 1 or next(iter(gpus)).type != "cuda":
++        raise _NoReplay("not the work of one GPU")
++    unsafe = get_first_incompatible_cudagraph_node(graph)
++    if unsafe is not None:
++        raise _NoReplay(f"{unsafe.name} cannot be part of a CUDA graph")
++    if type(results) not in (tuple, list) or not all(
++        isinstance(result, torch.fx.Node) for result in results
++    ):
++        raise _NoReplay("gives something else than tensors")
++    used = [i for i, node in enumerate(placeholders) if node.users]
++    return used, [result not in moving for result in results], next(iter(gpus))
++
++
++def _same_tensor(a: torch.Tensor, b: torch.Tensor) -> bool:
++    if a.shape != b.shape or a.dtype != b.dtype or a.device != b.device:
++        return False
++    if a.stride() != b.stride() or a.is_inference() != b.is_inference():
++        return False
++    if torch.equal(a, b):
++        return True
++    if not a.is_floating_point() and not a.is_complex():
++        return False
++    return bool(((a == b) | (a.isnan() & b.isnan())).all())
++
++
++class _Replay:
++    """What a backend made of a graph, run as a CUDA graph.
++
++    On a GPU a call of a compiled graph is a few hundred kernel launches, and
++    for a model of small layers the CPU takes longer to make them than the
++    GPU to run them. A CUDA graph is the launches of one call, recorded:
++    replaying it starts them all at once. It is the same kernels on the same
++    memory every time, so the inputs of a call are copied to where the
++    recorded call had its inputs, and the results are copies of what the
++    recorded call left where it had its results: every call gets tensors of
++    its own, as it does from the code itself. A caller that hands over the
++    same memory again and again (one buffer it fills, a few it goes round)
++    gets a recording that reads the inputs where they are, and no copy; and
++    such a recording is started as soon as the region is called, before the
++    call is looked at (``ahead``): the GPU works while the CPU checks.
++
++    The code itself runs the first call (kernels are chosen and loaded then),
++    and the second, which is then recorded and replayed once: unless the
++    replay gives what the code gave, bit for bit, on the same tensors, in the
++    same layout, and neither wrote to an input nor gave back memory of an
++    input or one result in the memory of another, the code goes on running
++    every call. So it does when gradients are recorded, under a torch
++    function or dispatch mode, while the caller is recording a CUDA graph of
++    its own, and while another thread is replaying.
++    ``_replayable`` says what a graph has to be like before any of this.
++    """
++
++    __slots__ = (
++        "calls",
++        "compiled",
++        "constant",
++        "device",
++        "inplace",
++        "lock",
++        "off",
++        "recordings",
++        "seen",
++        "used",
++    )
++
++    def __init__(
++        self,
++        compiled: Callable[..., Any],
++        used: list[int],
++        constant: list[bool],
++        device: torch.device | None,
++        off: str | None,
++    ) -> None:
++        self.compiled = compiled
++        self.used = used
++        self.constant = constant
++        self.device = device
++        # Why the code runs every call, once that is known.
++        self.off = off
++        self.calls = 0
++        # By whether the call is under inference mode, whose tensors are
++        # not those of other calls: the CUDA graph, where its inputs are
++        # (with their place among those of a call), and where its results.
++        self.recordings: dict[bool, tuple[Any, list[Any], list[torch.Tensor]]] = {}
++        # Recordings that read the inputs where a call had them, by where
++        # that was (see ``place``), and how often a place was seen.
++        self.inplace: dict[Any, tuple[Any, list[Any], list[torch.Tensor]]] = {}
++        self.seen: dict[Any, int] = {}
++        self.lock = threading.Lock()
++
++    def state(self) -> str:
++        if self.off is not None:
++            return self.off
++        return "recorded" if self.recordings else "waiting"
++
++    def __call__(self, *args: Any) -> Any:
++        pending = _state.ahead
++        if pending is not None and pending[0] is self:
++            # Started before the call was looked at (``ahead``): if the
++            # inputs are where it read them, the results are the call's.
++            _state.ahead = None
++            try:
++                if self.place(args) == pending[1]:
++                    return [result.clone() for result in self.inplace[pending[1]][2]]
++            finally:
++                self.lock.release()
++        if (
++            self.off is not None
++            or torch.is_grad_enabled()
++            or _function_stack()
++            or torch._C._len_torch_dispatch_stack()
++            or torch.cuda.is_current_stream_capturing()
++        ):
++            return self.compiled(*args)
++        recording = self.recordings.get(torch.is_inference_mode_enabled())
++        if recording is None:
++            return self.record(args)
++        if not self.lock.acquire(False):
++            return self.compiled(*args)
++        try:
++            place = self.place(args)
++            found = self.inplace.get(place)
++            if found is not None:
++                # The inputs are in the memory a recording reads them from.
++                found[0].replay()
++                return [result.clone() for result in found[2]]
++            if place is not None and len(self.inplace) < _MOST_PLACES:
++                count = self.seen[place] = self.seen.get(place, 0) + 1
++                if len(self.seen) > 64:
++                    self.seen.clear()
++                if count == _PLACE_SEEN:
++                    return self.record_inplace(place, args)
++            graph, inputs, results = recording
++            for static, position in inputs:
++                arg = args[position]
++                if arg.shape != static.shape or arg.dtype != static.dtype:
++                    break
++                static.copy_(arg)
++            else:
++                graph.replay()
++                return [result.clone() for result in results]
++        finally:
++            self.lock.release()
++        return self.compiled(*args)
++
++    def place(self, args: tuple[Any, ...]) -> Any:
++        """Where the inputs the graph reads are, and how they lie there: a
++        call whose inputs are in the same memory in the same way (a caller
++        that fills one buffer, or goes round a few) can be replayed from a
++        recording that reads them there, without the copy. None for inputs
++        that are not dense tensors of the GPU."""
++        return self.place_of([args[position] for position in self.used])
++
++    def place_of(self, tensors: list[Any]) -> Any:
++        """``place`` for the tensors the graph reads, in their order."""
++        try:
++            parts: list[Any] = [torch.is_inference_mode_enabled()]
++            # Not ``data_ptr()``: that is a pointer one could write through,
++            # and asking for it counts as a write to a tensor that is watched
++            # (a weight another graph has built in).
++            address = torch._C._data_address
++            for arg in tensors:
++                if arg.device != self.device or arg.layout is not torch.strided:
++                    return None
++                parts += [address(arg), arg.storage_offset(), arg.shape]
++                parts += [arg.stride(), arg.dtype]
++            return tuple(parts)
++        except Exception:
++            return None
++
++    def ahead(self, tensors: list[Any]) -> Any:
++        """Starts the kernels for a call that has not been looked at yet, if
++        ``tensors`` (what the region takes to be the inputs the graph reads)
++        are where a recording reads its inputs. Returns that place, with the
++        lock held until the call takes the results (``__call__``) or turns
++        out not to be one for them (``_Region.__call__``); None if nothing
++        was started. A recording reads its inputs and built-in tensors and
++        writes memory of its own, so one that is started for nothing leaves
++        nothing behind."""
++        if (
++            self.off is not None
++            or not self.inplace
++            or torch.is_grad_enabled()
++            or _function_stack()
++            or torch._C._len_torch_dispatch_stack()
++            or torch.cuda.is_current_stream_capturing()
++        ):
++            return None
++        place = self.place_of(tensors)
++        found = self.inplace.get(place) if place is not None else None
++        if found is None or not self.lock.acquire(False):
++            return None
++        try:
++            found[0].replay()
++        except BaseException:
++            self.lock.release()
++            raise
++        return place
++
++    def record_inplace(self, place: Any, args: tuple[Any, ...]) -> Any:
++        """Records the code on the inputs of this call themselves. Only
++        after a recording on copies showed that it writes to no input and
++        gives back no memory of one; and checked like that one."""
++        expected = self.compiled(*args)
++        try:
++            self.inplace[place] = self.capture(args, expected, False)
++        except Exception:
++            # The recording on copies goes on serving such calls.
++            self.seen[place] = _PLACE_SEEN + 1
++        return expected
++
++    def record(self, args: tuple[Any, ...]) -> Any:
++        expected = self.compiled(*args)
++        self.calls += 1
++        if self.calls < 2 or not self.lock.acquire(False):
++            return expected
++        try:
++            self.recordings[torch.is_inference_mode_enabled()] = self.capture(
++                args, expected
++            )
++        except Exception as e:
++            reason = e if isinstance(e, _NoReplay) else f"{type(e).__name__}: {e}"
++            self.off = str(reason).split("\n")[0][:200]
++        finally:
++            self.lock.release()
++        return expected
++
++    def capture(
++        self, args: tuple[Any, ...], expected: Any, copies: bool = True
++    ) -> tuple[Any, list[Any], list[torch.Tensor]]:
++        """Records the code on copies of ``args`` (or, without ``copies``,
++        on ``args`` themselves), and replays it: what that gives has to be
++        ``expected``, which the code gave for them."""
++        device = self.device
++        if type(expected) not in (tuple, list) or len(expected) != len(self.constant):
++            raise _NoReplay("gives something else than the tensors of its graph")
++        if not all(isinstance(arg, torch.Tensor) for arg in args):
++            raise _NoReplay("takes something else than tensors")
++        given = list(args)
++        inputs = []
++        for position in self.used:
++            arg = args[position]
++            if arg.device != device or arg.layout is not torch.strided:
++                raise _NoReplay("an input is not a dense tensor on its GPU")
++            static = arg.detach().clone() if copies else arg
++            if static.stride() != arg.stride():
++                raise _NoReplay("an input is not laid out as a copy of it is")
++            inputs.append((static, position))
++            given[position] = static
++        versions = [static._version for static, _ in inputs]
++        torch.cuda.synchronize(device)
++        graph = torch.cuda.CUDAGraph()
++        with torch.cuda.device(device), torch.cuda.graph(graph):
++            results = self.compiled(*given)
++        del given
++        if type(results) not in (tuple, list) or len(results) != len(expected):
++            raise _NoReplay("gives something else when it is recorded")
++        graph.replay()
++        if versions != [static._version for static, _ in inputs]:
++            raise _NoReplay("writes to an input")
++        memory = {static.untyped_storage()._cdata for static, _ in inputs}
++        for result, wanted, constant in zip(results, expected, self.constant):
++            if type(result) is not torch.Tensor or type(wanted) is not torch.Tensor:
++                raise _NoReplay("gives something else than plain tensors")
++            if result.requires_grad or result.layout is not torch.strided:
++                raise _NoReplay("gives a tensor that is not a plain dense one")
++            if not constant and result.device != device:
++                raise _NoReplay("gives a tensor of another device")
++            storage = result.untyped_storage()._cdata
++            if storage in memory:
++                raise _NoReplay("gives memory of an input, or the same memory twice")
++            memory.add(storage)
++            if not _same_tensor(result, wanted):
++                raise _NoReplay("replayed, it gives something else")
++            if result.clone().stride() != result.stride():
++                raise _NoReplay("gives a tensor that is not laid out as a copy of it is")
++        return graph, inputs if copies else [], list(results)
++
++
+ def _inductor_frozen(
+     graph: torch.fx.GraphModule, inputs: list[Any]
+ ) -> Callable[..., Any]:
+@@ -4407,6 +5140,7 @@ def make_pass(
+     warmup: int,
+     freeze: bool = True,
+     passes: tuple[Callable[..., Any], ...] = (),
++    cuda_graphs: bool = False,
+ ) -> Regions:
+     global _runtime
+     if isinstance(backend, str):
+@@ -4414,4 +5148,4 @@ def make_pass(
+             raise ValueError(f"unknown backend {backend!r}; known: {sorted(_BACKENDS)}")
+         backend = _BACKENDS[backend]
+     _runtime = runtime
+-    return Regions(backend, min_ops, max_variants, warmup, freeze, passes)
++    return Regions(backend, min_ops, max_variants, warmup, freeze, passes, cuda_graphs)
+diff --git a/torch/vm/passes.py b/torch/vm/passes.py
+index aadd79d..522cb10 100644
+--- a/torch/vm/passes.py
++++ b/torch/vm/passes.py
+@@ -143,6 +143,18 @@ class Graphs(BuiltinPass):
+             does not see the writes to (shared with another process, or a NumPy
+             array's). ``regions()`` reports ``frozen`` per region. On by
+             default (``TORCH_VM_FREEZE=0`` turns it off).
++        cuda_graphs: run what the backend made of a graph as a CUDA graph
++            where the graph is the work of one GPU: the kernel launches of a
++            call are recorded once and replayed, which takes the time the CPU
++            needs to make them out of a call. The inputs of a call are copied
++            to where the recorded call had them and every call gets copies of
++            the results, so the tensors of a call stay what they are when the
++            next one runs; the memory of the recorded call is kept. A graph
++            with work on the CPU that depends on its inputs, with sizes left
++            open, that writes to its inputs, or whose replay does not give
++            what its code gives, runs as it does without this, and so does a
++            call that records gradients. ``regions()`` reports ``cuda_graphs``
++            per region. Off by default.
+     """
+ 
+     engine: ClassVar[str] = "graphs"
+@@ -153,6 +165,7 @@ class Graphs(BuiltinPass):
+     min_ops: int = 4
+     max_variants: int = 32
+     freeze: bool | None = None
++    cuda_graphs: bool = False
+ 
+ 
+ @dataclasses.dataclass(frozen=True, repr=False)

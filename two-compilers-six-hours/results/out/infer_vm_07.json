@@ -1,0 +1,96 @@
+{
+ "label": "vm #7: 3261 img/s: same config; foresee confirms the built-in weights without the side effects of the stale check",
+ "tree": "/home/dev/local/hill/acc/trees/vm_07",
+ "config": "/home/dev/local/hill/acc/trees/vm_07/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7586135028866181,
+  "precision": 0.5572667102678094,
+  "recall": 0.7904441118277347
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7534942888055738,
+  "precision": 0.5549534502329211,
+  "recall": 0.7902560385696266
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.752141522781242,
+  "precision": 0.5530785772571295,
+  "recall": 0.7853115582182445
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 721,
+   "found": 708,
+   "missing": 13,
+   "extra": 4,
+   "largest_score_difference": 0.01953125,
+   "largest_box_shift_px": 10.696456909179688
+  },
+  "detections_iou_0.5": {
+   "detections": 721,
+   "found": 711,
+   "missing": 10,
+   "extra": 1,
+   "largest_score_difference": 0.01953125,
+   "largest_box_shift_px": 15.65289306640625
+  },
+  "raw_output": {
+   "rmse": 0.07465343837940991,
+   "largest": 30.0,
+   "rms_of_reference": 41.326312729819534
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 590,
+   "missing": 138,
+   "extra": 122,
+   "largest_score_difference": 0.04343491792678833,
+   "largest_box_shift_px": 10.548019409179688
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 707,
+   "missing": 21,
+   "extra": 5,
+   "largest_score_difference": 0.04343491792678833,
+   "largest_box_shift_px": 10.548019409179688
+  },
+  "raw_output": {
+   "rmse": 0.09223772871530439,
+   "largest": 17.68756103515625,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 591,
+   "missing": 137,
+   "extra": 130,
+   "largest_score_difference": 0.03978806734085083,
+   "largest_box_shift_px": 5.324230194091797
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 714,
+   "missing": 14,
+   "extra": 7,
+   "largest_score_difference": 0.03978806734085083,
+   "largest_box_shift_px": 17.06585693359375
+  },
+  "raw_output": {
+   "rmse": 0.10136698626941315,
+   "largest": 23.755752563476562,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32731650816809
+ },
+ "ms_per_batch_with_copy_out": 25.19915672019124
+}

@@ -1,0 +1,15 @@
+{
+ "label": "tc_01",
+ "tree": "/home/dev/local/hill/acc/trees/tc_01",
+ "config": "/home/dev/local/hill/acc/trees/tc_01/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.05241046056858941,
+   "eager_moved_by": 0.9369532532248956,
+   "off_by": 0.053265971171509156,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

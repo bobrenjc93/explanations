@@ -1,0 +1,314 @@
+diff --git a/torch/_dynamo/guards.py b/torch/_dynamo/guards.py
+index b11746e..3cea3d2 100644
+--- a/torch/_dynamo/guards.py
++++ b/torch/_dynamo/guards.py
+@@ -2733,6 +2733,28 @@ class GuardBuilder(GuardBuilderBase):
+             guard.user_stack,
+         )
+ 
++    # A version captured during one trace is meaningless for a later subgraph
++    # reuse check.
++    @unsupported_guard_check_spec
++    def FROZEN_TENSOR_VERSION(self, guard: Guard) -> None:
++        """Inductor freezing read this tensor's values at compile time, so an
++        in-place update (which bumps the version counter) has to recompile. A
++        tensor the graph did not freeze (it is unused, or the graph itself
++        writes it and keeps it as an input) needs no such guard. Writes through
++        `.data` have their own version counter and stay invisible, as they are
++        to autograd."""
++        value = self.get(guard)
++        tracing_context = torch._guards.TracingContext.try_get()
++        if tracing_context is None and self.check_fn_manager.output_graph is not None:
++            tracing_context = getattr(
++                self.check_fn_manager.output_graph, "tracing_context", None
++            )
++        frozen = None if tracing_context is None else tracing_context.frozen_params
++        # Without the record of what was frozen, guard every candidate
++        if frozen is not None and not any(value is p for p in frozen):
++            return
++        self._guard_on_attribute(guard, "_version", GuardBuilder.EQUALS_MATCH)
++
+     # Dict versions change on any mutation, so a version captured during one
+     # trace is meaningless for a later subgraph reuse check.
+     @unsupported_guard_check_spec
+diff --git a/torch/_dynamo/output_graph.py b/torch/_dynamo/output_graph.py
+index dbc3e7d..7b417b2 100644
+--- a/torch/_dynamo/output_graph.py
++++ b/torch/_dynamo/output_graph.py
+@@ -171,6 +171,7 @@ from .utils import (
+     get_unique_name_wrt,
+     graph_break_reasons,
+     increment_op_count,
++    is_parameter_freezing,
+     istype,
+     lazy_format_graph_code,
+     LazyString,
+@@ -1935,6 +1936,10 @@ class OutputGraph(OutputGraphCommon):
+                     source, NumpyTensorSource
+                 ):
+                     install_guard(source.make_guard(GuardBuilder.ID_MATCH))
++                    if is_parameter_freezing():
++                        install_guard(
++                            source.make_guard(GuardBuilder.FROZEN_TENSOR_VERSION)
++                        )
+                 elif not is_constant_source(source):
+                     install_guard(source.make_guard(GuardBuilder.TENSOR_MATCH))
+ 
+diff --git a/torch/_dynamo/variables/builder.py b/torch/_dynamo/variables/builder.py
+index 67f67a6..90d8911 100644
+--- a/torch/_dynamo/variables/builder.py
++++ b/torch/_dynamo/variables/builder.py
+@@ -3493,6 +3493,8 @@ class VariableBuilder:
+             # significant cost savings, especially for optimizers  handling many
+             # tensors.
+             self.install_guards(GuardBuilder.ID_MATCH)
++            if is_parameter_freezing():
++                self.install_guards(GuardBuilder.FROZEN_TENSOR_VERSION)
+             self.assert_not_wrapped_by_this_graph(value)
+             return self.tx.output.register_attr_or_module(
+                 value, self.name, source=source
+diff --git a/torch/_dynamo/variables/user_defined.py b/torch/_dynamo/variables/user_defined.py
+index 01598be..3b53117 100644
+--- a/torch/_dynamo/variables/user_defined.py
++++ b/torch/_dynamo/variables/user_defined.py
+@@ -4525,7 +4525,16 @@ class UserDefinedObjectVariable(UserDefinedVariable):
+                 ).call_function(tx, [variables.ConstantVariable.create(name)], {})
+ 
+             if self.source and getattr_fn is torch.nn.Module.__getattr__:
+-                if isinstance(
++                # Only a submodule needs its nn_module_stack source. A lazy
++                # parameter or buffer stays lazy: the isinstance below would
++                # realize it and install its guards, though hasattr() and an
++                # overwrite of the attribute never read the value.
++                is_lazy_non_module = (
++                    isinstance(out, variables.LazyVariableTracker)
++                    and not out.is_realized()
++                    and not isinstance(out.peek_value(), torch.nn.Module)
++                )
++                if not is_lazy_non_module and isinstance(
+                     out,
+                     (
+                         variables.UnspecializedNNModuleVariable,
+diff --git a/torch/_guards.py b/torch/_guards.py
+index f7dbacb..7374ffe 100644
+--- a/torch/_guards.py
++++ b/torch/_guards.py
+@@ -1175,6 +1175,9 @@ class TracingContext:
+         self.aot_graph_name: list[str] | None = None
+         self.params_flat: list[Any] | None = None
+         self.params_flat_unwrap_subclasses: list[Any] | None = None
++        # set by inductor freezing: the parameters and buffers whose values it
++        # baked into the graph as constants (None when nothing was frozen)
++        self.frozen_params: list[Any] | None = None
+         self.params_unwrapped_to_flat_index: list[Any] | None = None
+         # this is for extended return calling convention from backend
+         # compiler to aot_autograd
+diff --git a/torch/_inductor/freezing.py b/torch/_inductor/freezing.py
+index 3591e40..9df08fe 100644
+--- a/torch/_inductor/freezing.py
++++ b/torch/_inductor/freezing.py
+@@ -121,6 +121,13 @@ def _freeze(
+         preserved_arg_indices = replace_params_with_constants(
+             aot_autograd_gm, params_flat, fw_metadata
+         )
++        # Dynamo guards the version counter of what was frozen (FROZEN_TENSOR_VERSION)
++        preserved = set(preserved_arg_indices)
++        if tracing_context.frozen_params is None:
++            tracing_context.frozen_params = []
++        tracing_context.frozen_params.extend(
++            p for i, p in enumerate(params_flat) if i not in preserved
++        )
+     else:
+         inputs = aot_autograd_gm.graph.find_nodes(op="placeholder")
+         preserved_arg_indices = list(range(len(inputs)))
+diff --git a/torch/_inductor/kernel/conv.py b/torch/_inductor/kernel/conv.py
+index 1a18597..1db0484 100644
+--- a/torch/_inductor/kernel/conv.py
++++ b/torch/_inductor/kernel/conv.py
+@@ -458,6 +458,36 @@ def convert_1x1_conv_to_mm(x, weight, bias):
+     return L[aten.permute](result, result_permute)
+ 
+ 
++def _half_conv_in_channel_padding(
++    x: TensorBox,
++    in_chan: int,
++    groups: int,
++    transposed: bool,
++    ndim: int,
++    device_type: str,
++) -> int:
++    """Number of zero input channels to add to a convolution.
++
++    cuDNN's channels-last half-precision kernels are slow for 3 input channels
++    (the first convolution of an image model): 102 us with 3 channels against
++    78 us with a 4th channel of zeros (bf16 and fp16, 8x3x384x512 to 32
++    channels, 3x3, H100). A zero channel with zero weights adds exactly 0 to
++    every sum, so only the kernel cuDNN picks changes.
++    """
++    if (
++        device_type == "cuda"
++        and V.graph.layout_opt
++        and ndim == 2
++        and not transposed
++        and groups == 1
++        and in_chan == 3
++        and x.get_dtype() in (torch.float16, torch.bfloat16)
++        and V.graph.sizevars.statically_known_equals(x.get_size()[1], in_chan)
++    ):
++        return 1
++    return 0
++
++
+ @register_lowering(aten.convolution)
+ def convolution(
+     x: TensorBox,
+@@ -579,6 +609,18 @@ def convolution(
+         # output must be reproduced for fused consumers (see #201296).
+         return emulate_lowp_output_cast(result)
+ 
++    pad_chan = _half_conv_in_channel_padding(
++        x, in_chan, groups, transposed, ndim, device_type
++    )
++    if pad_chan:
++        pads = [0, 0] * ndim + [0, pad_chan]
++        x = L[aten.constant_pad_nd](x, pads, 0)
++        # Padded at run time even when the weight is a frozen constant: a constant
++        # made here would be stored by value in the FX graph cache, whose key leaves
++        # out the values of frozen parameters, and reused for other weights.
++        weight = L[aten.constant_pad_nd](weight, pads, 0)
++        in_chan += pad_chan
++
+     x.realize()
+     weight.realize()
+ 
+diff --git a/torch/_inductor/lowering.py b/torch/_inductor/lowering.py
+index ab2e781..65e8f40 100644
+--- a/torch/_inductor/lowering.py
++++ b/torch/_inductor/lowering.py
+@@ -6139,6 +6139,81 @@ def _pool_argmax_inner_fn(x, kernel_size, inner_fn):
+     return inner_fn_with_index
+ 
+ 
++def _cur_node_uses_only_values() -> bool:
++    """True when the FX node being lowered returns (values, indices) and nothing reads the indices."""
++    node = getattr(V.graph, "current_node", None)
++    if node is None:
++        return False
++    return all(
++        user.op == "call_function"
++        and user.target is operator.getitem
++        and user.args[1] == 0
++        for user in node.users
++    )
++
++
++def _max_pool_separable_pays_off(kernel_size, stride) -> bool:
++    """The max over a window is the max over one dim of the max over the others, so the
++    values can be reduced one dim at a time: k_1 + ... + k_n loads per element in place
++    of k_1 * ... * k_n. Dims are reduced last to first, so the intermediate of dim d
++    still has dims before d at input resolution (stride times more elements), and each
++    intermediate is stored and loaded again. Only worth it when it at least halves the loads.
++    """
++    if not all(isinstance(v, (int, sympy.Integer)) for v in (*kernel_size, *stride)):
++        return False
++    if sum(k > 1 for k in kernel_size) < 2:
++        return False
++    window = functools.reduce(operator.mul, kernel_size)
++    loads, scale = 0, 1
++    for d in range(len(kernel_size)):
++        # +2: the store and the load of the intermediate (the last stage, dim 0, has none)
++        loads += (kernel_size[d] + (2 if d > 0 else 0)) * scale
++        scale *= stride[d]
++    return 2 * loads <= window
++
++
++def _max_pool_values_separable(
++    x, kernel_size, stride, padding, dilation, dhw_out, min_value, check_bounds, n_dim
++):
++    dtype = x.dtype
++    cur = x
++    for d in reversed(range(n_dim)):
++        size = list(cur.get_size())
++        axis = len(size) - n_dim + d
++        in_size = size[axis]
++        size[axis] = dhw_out[d]
++        loader = cur.make_loader()
++
++        def fn_inner(idx, reduction_idx, loader=loader, axis=axis, d=d, in_size=in_size):
++            pos = idx[axis] * stride[d] + reduction_idx[0] * dilation[d] - padding[d]
++            index = [*idx[:axis], pos, *idx[axis + 1 :]]
++            if not check_bounds:
++                return loader(index)
++            return ops.masked(
++                range_mask(pos, in_size, 0), lambda: loader(index), min_value
++            )
++
++        # One dim of a pooling window is short: a pointwise kernel of k loads beats a
++        # reduction kernel over k elements, as on the low-memory path.
++        with config.patch(
++            unroll_reductions_threshold=max(config.unroll_reductions_threshold, 26)
++        ):
++            cur = Reduction.create(
++                reduction_type="max",
++                input_node=cur,
++                device=x.get_device(),
++                dst_dtype=dtype,
++                src_dtype=dtype,
++                inner_fn=fn_inner,
++                ranges=size,
++                reduction_ranges=[kernel_size[d]],
++            )
++        if d > 0:
++            # An unrealized stage would be inlined into the next one, window loads again
++            cur.realize()
++    return cur
++
++
+ def _max_pool_with_offsets(
+     x,
+     kernel_size,
+@@ -6170,7 +6245,8 @@ def _max_pool_with_offsets(
+     )
+ 
+     new_size = list(batch) + list(dhw_out)
+-    if any(padding) or any(ceil_mode) or any(d > 1 for d in dilation):
++    check_bounds = any(padding) or any(ceil_mode) or any(d > 1 for d in dilation)
++    if check_bounds:
+         x_loader = constant_boundary_condition(x, min_value, dim=n_dim)
+     else:
+         x_loader = x.make_loader()
+@@ -6184,16 +6260,24 @@ def _max_pool_with_offsets(
+         ]
+         return x_loader([*prefix, *ih])
+ 
+-    result = Reduction.create(
+-        reduction_type="max",
+-        input_node=x,
+-        device=x.get_device(),
+-        dst_dtype=dtype,
+-        src_dtype=dtype,
+-        inner_fn=fn_inner,
+-        ranges=new_size,
+-        reduction_ranges=kernel_size,
+-    )
++    # The indices need the whole window at once; the values alone do not.
++    if _cur_node_uses_only_values() and _max_pool_separable_pays_off(
++        kernel_size, stride
++    ):
++        result = _max_pool_values_separable(
++            x, kernel_size, stride, padding, dilation, dhw_out, min_value, check_bounds, n_dim
++        )
++    else:
++        result = Reduction.create(
++            reduction_type="max",
++            input_node=x,
++            device=x.get_device(),
++            dst_dtype=dtype,
++            src_dtype=dtype,
++            inner_fn=fn_inner,
++            ranges=new_size,
++            reduction_ranges=kernel_size,
++        )
+     offsets = Reduction.create(
+         reduction_type="argmax",
+         input_node=x,

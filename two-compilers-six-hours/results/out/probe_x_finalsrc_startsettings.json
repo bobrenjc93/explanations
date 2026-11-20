@@ -1,0 +1,57 @@
+{
+ "label": "final source, CUDA graphs only",
+ "tree": "/home/dev/local/hill/acc/trees/tc_15",
+ "config": "/home/dev/local/hill/acc/trees/tc_01/hill_config.py",
+ "rmse_against_eager_before": 0.0518693352705632,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.09078824104465963,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5940015153988939,
+   "off_by": 0.051943006296707644,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5923968550007377,
+   "off_by": 0.04991176211029206,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8794924338209396,
+   "off_by": 0.05060323864081196,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.058741717627919646,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.04695841097789951,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.05381738237773282,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.09275442783445398,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

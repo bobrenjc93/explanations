@@ -1,0 +1,7 @@
+{
+ "label": "tc_19",
+ "at first": 3363.0729879232968,
+ "after a batch of 3 images": 1744.9551691297065,
+ "after images of another size": 1475.6652633973808,
+ "after a weight was updated in place": 1476.0108279810393
+}

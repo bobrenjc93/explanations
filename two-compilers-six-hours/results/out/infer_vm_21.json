@@ -1,0 +1,96 @@
+{
+ "label": "vm #21: 4602 img/s: source: a trace may store None in a buffer that holds None, so the model in training mode is one graph (46 ms a training step against eager's 65); no change in the timed path",
+ "tree": "/home/dev/local/hill/acc/trees/vm_21",
+ "config": "/home/dev/local/hill/acc/trees/vm_21/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7584290165568407,
+  "precision": 0.5574199803663428,
+  "recall": 0.7903271631560891
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7530504965229602,
+  "precision": 0.5538967023959525,
+  "recall": 0.7898512006823969
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7520343467446384,
+  "precision": 0.5544000045174833,
+  "recall": 0.7864529522370075
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 719,
+   "found": 708,
+   "missing": 11,
+   "extra": 6,
+   "largest_score_difference": 0.0263824462890625,
+   "largest_box_shift_px": 10.662933349609375
+  },
+  "detections_iou_0.5": {
+   "detections": 719,
+   "found": 710,
+   "missing": 9,
+   "extra": 4,
+   "largest_score_difference": 0.0263824462890625,
+   "largest_box_shift_px": 10.662933349609375
+  },
+  "raw_output": {
+   "rmse": 0.07553714586199292,
+   "largest": 30.0,
+   "rms_of_reference": 41.326306013478806
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 588,
+   "missing": 139,
+   "extra": 126,
+   "largest_score_difference": 0.04813408851623535,
+   "largest_box_shift_px": 10.553131103515625
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 709,
+   "missing": 18,
+   "extra": 5,
+   "largest_score_difference": 0.04813408851623535,
+   "largest_box_shift_px": 16.628448486328125
+  },
+  "raw_output": {
+   "rmse": 0.09185631966563015,
+   "largest": 17.695556640625,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 588,
+   "missing": 139,
+   "extra": 131,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 5.282386779785156
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 713,
+   "missing": 14,
+   "extra": 6,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 17.0206298828125
+  },
+  "raw_output": {
+   "rmse": 0.10137936710777458,
+   "largest": 24.255874633789062,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32732316546168
+ },
+ "ms_per_batch_with_copy_out": 24.33135302271694
+}

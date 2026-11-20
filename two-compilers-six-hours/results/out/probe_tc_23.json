@@ -1,0 +1,57 @@
+{
+ "label": "tc #23: 3626 img/s: source: the version counters of all frozen tensors are checked by ONE guard instead of 370 attribute guards (guard check 114 -> expected ~35 us). Same config as the 3619 row: sound freezing + max_autotune + narrow guard filter, CUDA graphs without trees, static shapes. GIVES UP: edits of non-tensor module attributes; the stale-output check. Not followed: writes through .data",
+ "tree": "/home/dev/local/hill/acc/trees/tc_23",
+ "config": "/home/dev/local/hill/acc/trees/tc_23/hill_config.py",
+ "rmse_against_eager_before": 0.07295145502333819,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.12300534166122383,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5940015153988939,
+   "off_by": 0.07921314533836249,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5923968550007377,
+   "off_by": 0.0721579146784315,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8794924338209396,
+   "off_by": 0.07260692897394341,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.09223322255258239,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06674367875099779,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08198630869138765,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.12300534166122383,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

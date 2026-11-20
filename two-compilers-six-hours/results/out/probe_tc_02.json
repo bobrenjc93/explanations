@@ -1,0 +1,57 @@
+{
+ "label": "tc #2: 2909 img/s: inductor freezing + CUDA graphs; Dynamo fix so freezing accepts a module that re-assigns its buffers (lazy buffer not realized by hasattr). GIVES UP following in-place weight updates (weights frozen at compile time)",
+ "tree": "/home/dev/local/hill/acc/trees/tc_02",
+ "config": "/home/dev/local/hill/acc/trees/tc_02/hill_config.py",
+ "rmse_against_eager_before": 0.0715437173298259,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.1221174520843005,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5950246498390344,
+   "off_by": 0.5968064970565626,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5915301554982599,
+   "off_by": 0.594696946699545,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8799074299206139,
+   "off_by": 0.8812964750339406,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.09075680365963634,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06891409694625321,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08168877528909964,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.12361029322068282,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

@@ -1,0 +1,96 @@
+{
+ "label": "vm #18: 4608 img/s: source: the recording of the last call is started before the call is looked at (taken only if the call is for it); const address instead of data_ptr() where inputs are located",
+ "tree": "/home/dev/local/hill/acc/trees/vm_18",
+ "config": "/home/dev/local/hill/acc/trees/vm_18/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7584290165568407,
+  "precision": 0.5574199803663428,
+  "recall": 0.7903271631560891
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7534942888055738,
+  "precision": 0.5549534502329211,
+  "recall": 0.7902560385696266
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7520343467446384,
+  "precision": 0.5544000045174833,
+  "recall": 0.7864529522370075
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 721,
+   "found": 710,
+   "missing": 11,
+   "extra": 4,
+   "largest_score_difference": 0.022613525390625,
+   "largest_box_shift_px": 10.696456909179688
+  },
+  "detections_iou_0.5": {
+   "detections": 721,
+   "found": 711,
+   "missing": 10,
+   "extra": 3,
+   "largest_score_difference": 0.022613525390625,
+   "largest_box_shift_px": 10.696456909179688
+  },
+  "raw_output": {
+   "rmse": 0.0753891264953599,
+   "largest": 30.0,
+   "rms_of_reference": 41.326312729819534
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 588,
+   "missing": 139,
+   "extra": 126,
+   "largest_score_difference": 0.04813408851623535,
+   "largest_box_shift_px": 10.553131103515625
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 709,
+   "missing": 18,
+   "extra": 5,
+   "largest_score_difference": 0.04813408851623535,
+   "largest_box_shift_px": 16.628448486328125
+  },
+  "raw_output": {
+   "rmse": 0.09185631966563015,
+   "largest": 17.695556640625,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 590,
+   "missing": 137,
+   "extra": 131,
+   "largest_score_difference": 0.04084038734436035,
+   "largest_box_shift_px": 5.308845520019531
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 714,
+   "missing": 13,
+   "extra": 7,
+   "largest_score_difference": 0.04084038734436035,
+   "largest_box_shift_px": 17.064117431640625
+  },
+  "raw_output": {
+   "rmse": 0.1013759875642661,
+   "largest": 23.755874633789062,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32732316546168
+ },
+ "ms_per_batch_with_copy_out": 20.978275570087135
+}

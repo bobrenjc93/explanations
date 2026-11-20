@@ -1,0 +1,96 @@
+{
+ "label": "vm #17: 4507 img/s: config: engine picks timed over 16 runs and 12 replays instead of 8 and 6 (steadier picks)",
+ "tree": "/home/dev/local/hill/acc/trees/vm_17",
+ "config": "/home/dev/local/hill/acc/trees/vm_17/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7586135028866181,
+  "precision": 0.5572667102678094,
+  "recall": 0.7904441118277347
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7529478692947033,
+  "precision": 0.5545464048088515,
+  "recall": 0.7897959435660108
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7522721254368225,
+  "precision": 0.5521767959750085,
+  "recall": 0.7854393840148601
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 716,
+   "found": 709,
+   "missing": 7,
+   "extra": 6,
+   "largest_score_difference": 0.0314788818359375,
+   "largest_box_shift_px": 10.692398071289062
+  },
+  "detections_iou_0.5": {
+   "detections": 716,
+   "found": 711,
+   "missing": 5,
+   "extra": 4,
+   "largest_score_difference": 0.0314788818359375,
+   "largest_box_shift_px": 15.700469970703125
+  },
+  "raw_output": {
+   "rmse": 0.07530832897906767,
+   "largest": 28.0,
+   "rms_of_reference": 41.326313509370024
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 590,
+   "missing": 138,
+   "extra": 125,
+   "largest_score_difference": 0.05303269624710083,
+   "largest_box_shift_px": 10.548019409179688
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 710,
+   "missing": 18,
+   "extra": 5,
+   "largest_score_difference": 0.05303269624710083,
+   "largest_box_shift_px": 10.548019409179688
+  },
+  "raw_output": {
+   "rmse": 0.09182117076429205,
+   "largest": 16.68756103515625,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 587,
+   "missing": 141,
+   "extra": 129,
+   "largest_score_difference": 0.03139317035675049,
+   "largest_box_shift_px": 5.310150146484375
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 711,
+   "missing": 17,
+   "extra": 5,
+   "largest_score_difference": 0.03139317035675049,
+   "largest_box_shift_px": 17.113433837890625
+  },
+  "raw_output": {
+   "rmse": 0.10131733435912987,
+   "largest": 23.755752563476562,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.327310403142356
+ },
+ "ms_per_batch_with_copy_out": 21.733292378485203
+}

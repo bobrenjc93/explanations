@@ -1,0 +1,7 @@
+#!/bin/bash
+# gpu2 COMMAND...: like gpu, without the lock, for checks whose timing does not matter; cores from HILL_CORES.
+H=/home/dev/local/hill
+export PATH=/home/dev/local/g/pytorch-env/bin:$HOME/.cargo/bin:$PATH
+export TORCHINDUCTOR_CACHE_DIR=${HILL_CACHE:-$H/acc/cache}
+unset PYTHONPATH
+timeout ${HILL_TIMEOUT:-1500} taskset -c ${HILL_CORES:-0-11} python3 -I /home/dev/local/cfgloop/guard/safe_run.py 48 "$@"

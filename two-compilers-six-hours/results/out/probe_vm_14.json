@@ -1,0 +1,57 @@
+{
+ "label": "vm #14: 4372 img/s: config: a fused convolution's input channels padded with zero channels to a multiple of 4 (first layer 3 -> 4)",
+ "tree": "/home/dev/local/hill/acc/trees/vm_14",
+ "config": "/home/dev/local/hill/acc/trees/vm_14/hill_config.py",
+ "rmse_against_eager_before": 0.07235501871189892,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.122812815593268,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5950246498390344,
+   "off_by": 0.07767831424519098,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5915301554982599,
+   "off_by": 0.07178633459979065,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8799074299206139,
+   "off_by": 0.07384824426516298,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.059503616661704305,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.12264207345489442,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

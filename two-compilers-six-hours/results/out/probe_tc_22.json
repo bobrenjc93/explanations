@@ -1,0 +1,57 @@
+{
+ "label": "tc #22: 3619 img/s: fixed source; sound freezing + max_autotune + narrow guard filter (tensor and .training guards kept), CUDA graphs WITHOUT trees, realize threshold 20, automatic_dynamic_shapes=False. GIVES UP: edits of non-tensor module attributes; the stale-output check (outputs are static buffers overwritten by the next call). Not followed: writes through .data",
+ "tree": "/home/dev/local/hill/acc/trees/tc_22",
+ "config": "/home/dev/local/hill/acc/trees/tc_22/hill_config.py",
+ "rmse_against_eager_before": 0.07280617777133744,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.1237928314502341,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5958387264579161,
+   "off_by": 0.07924861865544983,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5919920970577557,
+   "off_by": 0.07186004646283949,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8798518278453805,
+   "off_by": 0.07164958447326696,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.09130925742665108,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06703965075115736,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08196753138432691,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.1237928314502341,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

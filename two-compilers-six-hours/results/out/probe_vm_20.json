@@ -1,0 +1,57 @@
+{
+ "label": "vm #20: 4614 img/s: source: the speculative start also finds inputs that are tensors of the model (after a weight was updated in place); no change in the timed path",
+ "tree": "/home/dev/local/hill/acc/trees/vm_20",
+ "config": "/home/dev/local/hill/acc/trees/vm_20/hill_config.py",
+ "rmse_against_eager_before": 0.07202066859884945,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.12134248449116329,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5958387264579161,
+   "off_by": 0.07926556865802138,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5919920970577557,
+   "off_by": 0.07138099689587182,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8798518278453805,
+   "off_by": 0.07343306870892408,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.05923621801771401,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.0688288788863386,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08160483857576972,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.12130282920637343,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

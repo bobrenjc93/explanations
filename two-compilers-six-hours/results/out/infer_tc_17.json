@@ -1,0 +1,96 @@
+{
+ "label": "tc #17: 3413 img/s: sound freezing: new Dynamo guard on the version counter of every tensor freezing baked in (an in-place weight update recompiles and re-freezes); freezing + max_autotune + CUDA graphs with trees, NO guard filter, recompile_limit=32. Not followed: writes through .data",
+ "tree": "/home/dev/local/hill/acc/trees/tc_17",
+ "config": "/home/dev/local/hill/acc/trees/tc_17/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7586135028866181,
+  "precision": 0.5572667102678094,
+  "recall": 0.7904441118277347
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7535909556131188,
+  "precision": 0.5552468920035771,
+  "recall": 0.7900435932542277
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7523144623449575,
+  "precision": 0.5540995708351987,
+  "recall": 0.7883931531121375
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 718,
+   "found": 703,
+   "missing": 15,
+   "extra": 10,
+   "largest_score_difference": 0.024200439453125,
+   "largest_box_shift_px": 23.21435546875
+  },
+  "detections_iou_0.5": {
+   "detections": 718,
+   "found": 709,
+   "missing": 9,
+   "extra": 4,
+   "largest_score_difference": 0.024200439453125,
+   "largest_box_shift_px": 23.21435546875
+  },
+  "raw_output": {
+   "rmse": 0.0748233179581134,
+   "largest": 30.0,
+   "rms_of_reference": 41.32632339950609
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 587,
+   "missing": 141,
+   "extra": 126,
+   "largest_score_difference": 0.04343491792678833,
+   "largest_box_shift_px": 25.34817123413086
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 708,
+   "missing": 20,
+   "extra": 5,
+   "largest_score_difference": 0.04343491792678833,
+   "largest_box_shift_px": 25.34817123413086
+  },
+  "raw_output": {
+   "rmse": 0.09265055657324768,
+   "largest": 18.68756103515625,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 590,
+   "missing": 138,
+   "extra": 128,
+   "largest_score_difference": 0.03978806734085083,
+   "largest_box_shift_px": 5.324230194091797
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 712,
+   "missing": 16,
+   "extra": 6,
+   "largest_score_difference": 0.03978806734085083,
+   "largest_box_shift_px": 16.953704833984375
+  },
+  "raw_output": {
+   "rmse": 0.10137248121425362,
+   "largest": 23.755752563476562,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32725991592884
+ },
+ "ms_per_batch_with_copy_out": 21.37091592885554
+}
