@@ -15,6 +15,7 @@ the favicon `<link>` tags using `../`), commit it, then run `python3 tools/build
 
 ## Index
 
+- Nov 21, 2026: [One model, two compilers, run again: torch.vm with its graphs built in the Rust engine](https://bobrenjc93.github.io/explanations/two-compilers-rust-engine/)
 - Nov 20, 2026: [Three more hours: does the gap between torch.compile and torch.vm widen?](https://bobrenjc93.github.io/explanations/two-compilers-six-hours/)
 - Nov 19, 2026: [One model, two compilers, the same agent for three hours each](https://bobrenjc93.github.io/explanations/two-compilers-one-model/)
 - Nov 18, 2026: [A quarter of a training step, lost to one Python frame: the chunks of CPython's frame stack under a compiled graph](https://bobrenjc93.github.io/explanations/frame-stack-chunks/)
