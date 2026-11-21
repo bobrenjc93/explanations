@@ -1,0 +1,96 @@
+{
+ "label": "vm #2: 2869 img/s: the CUDA graph is started ahead of the engine's checks of a call (ahead/missed protocol in the engine): the path's checks run while the GPU works",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_02",
+ "config": "/home/dev/local/hill2/acc/trees/vm_02/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7584290165568407,
+  "precision": 0.5574199803663428,
+  "recall": 0.7903271631560891
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7530504965229602,
+  "precision": 0.5538967023959525,
+  "recall": 0.7898512006823969
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7527890916611288,
+  "precision": 0.5553828722805935,
+  "recall": 0.7907314653251708
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 719,
+   "found": 705,
+   "missing": 14,
+   "extra": 11,
+   "largest_score_difference": 0.015625,
+   "largest_box_shift_px": 24.16712188720703
+  },
+  "detections_iou_0.5": {
+   "detections": 719,
+   "found": 710,
+   "missing": 9,
+   "extra": 6,
+   "largest_score_difference": 0.015625,
+   "largest_box_shift_px": 24.16712188720703
+  },
+  "raw_output": {
+   "rmse": 0.05145542284891052,
+   "largest": 11.0,
+   "rms_of_reference": 41.326306013478806
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 590,
+   "missing": 137,
+   "extra": 126,
+   "largest_score_difference": 0.02989983558654785,
+   "largest_box_shift_px": 26.310264587402344
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 709,
+   "missing": 18,
+   "extra": 7,
+   "largest_score_difference": 0.02989983558654785,
+   "largest_box_shift_px": 26.310264587402344
+  },
+  "raw_output": {
+   "rmse": 0.0964275830213961,
+   "largest": 28.450958251953125,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 588,
+   "missing": 139,
+   "extra": 131,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 5.282386779785156
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 713,
+   "missing": 14,
+   "extra": 6,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 17.0206298828125
+  },
+  "raw_output": {
+   "rmse": 0.10137936710777458,
+   "largest": 24.255874633789062,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.326346666824854
+ },
+ "ms_per_batch_with_copy_out": 21.8739208066836
+}

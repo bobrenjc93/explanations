@@ -1,0 +1,96 @@
+{
+ "label": "vm #8: 3355 img/s: fast configuration: Inductor(cuda_graphs=True, weight_layout=\"keep\", hand_out=True). GIVES UP two things: a write through weight.data to a 3x3 conv weight is not followed, and a raw address of a large result kept across calls (DLPack, __cuda_array_interface__) sees the next call write it. Both options are off by default",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_08",
+ "config": "/home/dev/local/hill2/acc/trees/vm_08/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7584290165568407,
+  "precision": 0.5574199803663428,
+  "recall": 0.7903271631560891
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7529478692947033,
+  "precision": 0.5545464048088515,
+  "recall": 0.7897959435660108
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7530472935879273,
+  "precision": 0.5554301396380747,
+  "recall": 0.7894105552521519
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 716,
+   "found": 707,
+   "missing": 9,
+   "extra": 10,
+   "largest_score_difference": 0.01953125,
+   "largest_box_shift_px": 24.67721939086914
+  },
+  "detections_iou_0.5": {
+   "detections": 716,
+   "found": 711,
+   "missing": 5,
+   "extra": 6,
+   "largest_score_difference": 0.01953125,
+   "largest_box_shift_px": 24.67721939086914
+  },
+  "raw_output": {
+   "rmse": 0.05132136555941434,
+   "largest": 11.0,
+   "rms_of_reference": 41.326313509370024
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 590,
+   "missing": 137,
+   "extra": 127,
+   "largest_score_difference": 0.02989983558654785,
+   "largest_box_shift_px": 25.78366470336914
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 711,
+   "missing": 16,
+   "extra": 6,
+   "largest_score_difference": 0.02989983558654785,
+   "largest_box_shift_px": 25.78366470336914
+  },
+  "raw_output": {
+   "rmse": 0.09619466544529062,
+   "largest": 30.450958251953125,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 586,
+   "missing": 141,
+   "extra": 130,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 5.294765472412109
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 711,
+   "missing": 16,
+   "extra": 5,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 17.1116943359375
+  },
+  "raw_output": {
+   "rmse": 0.10132809970839829,
+   "largest": 23.755874633789062,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32632472974878
+ },
+ "ms_per_batch_with_copy_out": 23.630255716852844
+}

@@ -1,0 +1,1653 @@
+diff --git a/rust/src/graph.rs b/rust/src/graph.rs
+index 1f25dab..84b6b74 100644
+--- a/rust/src/graph.rs
++++ b/rust/src/graph.rs
+@@ -271,6 +271,17 @@ pub struct Exported {
+     /// exported, for the reason `closed` gives: such a call runs the
+     /// instructions, and is not recorded again.
+     pub callable: Option<PyObj>,
++    /// Where the callable has them, its `ahead` and `missed`: what was
++    /// made of a graph may start its work on a device in front of the
++    /// checks of the path (`ahead`, given the arguments that are known
++    /// there, None for the others), where it changes nothing that can be
++    /// seen; the call that follows finds what was started, and a call
++    /// that does not follow is said with `missed`.
++    pub ahead: Option<(PyObj, PyObj)>,
++    /// The values of `Path::folded`, as they were in the run the form was
++    /// made of: they are put where the instructions behind the callable
++    /// read them.
++    pub folded: Vec<(PathValue, PyObj)>,
+     /// For a form that was closed because numbers were new at every call
+     /// (`GraphSite::ever_new`): where those numbers are, what they were at
+     /// the last call of the kind, and how many calls in a row had them.
+@@ -371,6 +382,12 @@ pub struct Path {
+     /// every call a form is for (`Def::fixed`), so a constant of the
+     /// graph, which the form checks where it is computed.
+     pub constants: Vec<PathValue>,
++    /// What is computed behind the callable, is the same in every call a
++    /// form is for (`Def::fixed`) and cannot change (`lasting`): its
++    /// instruction does not run. A form keeps the value it had when the
++    /// form was made (`Exported::folded`), and what it was computed from,
++    /// a tensor the graph gives, is not given back for it.
++    pub folded: Vec<PathValue>,
+     pub exported: Shared<Vec<Arc<Exported>>>,
+     /// Register files for the calls that run it, kept from one to the next.
+     pub registers: Shared<Vec<Vec<Obj>>>,
+@@ -456,6 +473,11 @@ const MAX_PROVISIONAL: u32 = 3;
+ const MAX_SHUNNED: usize = 8;
+ 
+ /// A graph: the paths from one operation of a block on.
++/// After how many calls the paths of a site are first tried longest first
++/// again, and at most.
++pub const LONGER_FIRST: u64 = 16;
++pub const LONGER_LAST: u64 = 1024;
++
+ pub struct GraphSite {
+     /// The function, the block, and the generic instructions of the block
+     /// from the first operation to the last of its run there.
+@@ -485,6 +507,12 @@ pub struct GraphSite {
+     pub exports: AtomicU64,
+     pub hits: AtomicU64,
+     pub misses: AtomicU64,
++    /// While a path that ran earlier has more operations than the one that
++    /// ran last: how many calls came since the paths were last tried in the
++    /// order of their lengths, and how many have to (`LONGER_FIRST`, twice
++    /// as many each time the short one was the one for the call again).
++    pub since_longer: AtomicU64,
++    pub until_longer: AtomicU64,
+     /// The graph whose path went through the first operation of this one:
+     /// while that one is there, this one is part of it.
+     pub within: Shared<std::sync::Weak<GraphSite>>,
+@@ -530,6 +558,8 @@ impl GraphSite {
+             exports: AtomicU64::new(0),
+             hits: AtomicU64::new(0),
+             misses: AtomicU64::new(0),
++            since_longer: AtomicU64::new(0),
++            until_longer: AtomicU64::new(LONGER_FIRST),
+             within: Shared::new(std::sync::Weak::new()),
+             missed: AtomicU64::new(u64::MAX),
+             times: Default::default(),
+@@ -664,6 +694,23 @@ impl GraphSite {
+             0
+         });
+         if let Some(form) = form {
++            // The path this site already has for this way leaves out the
++            // instructions of its own `folded`: a form that does not have
++            // those values is one whose calls run the instructions.
++            let has = |v: &PathValue| form.folded.iter().any(|(other, _)| other == v);
++            let form = if paths[at].folded.iter().all(has) {
++                form
++            } else {
++                match Arc::try_unwrap(form) {
++                    Ok(mut form) => {
++                        form.callable = None;
++                        form.ahead = None;
++                        form.closed = Some("what the form keeps is not what the path leaves out".to_string());
++                        Arc::new(form)
++                    }
++                    Err(form) => form,
++                }
++            };
+             paths[at].exported.borrow_mut().insert(0, form);
+         }
+         let path = paths.remove(at);
+@@ -924,6 +971,21 @@ unsafe fn is_token(o: Obj) -> bool {
+     [&b"torch.dtype"[..], b"torch.device", b"torch.layout", b"torch.memory_format"].contains(&name)
+ }
+ 
++/// A value that cannot change, and that is as good as another of its kind
++/// that is equal to it: an exact number, a str, None, a dtype or a device,
++/// the sizes of a tensor, a tuple of these.
++pub unsafe fn lasting(o: Obj) -> bool {
++    if o.is_null() || capi::is_unboxed(o) {
++        return false;
++    }
++    if is_number(o) || o == ffi::Py_None() || ffi::PyUnicode_CheckExact(o) != 0 || is_token(o) {
++        return true;
++    }
++    let name = std::ffi::CStr::from_ptr((*ffi::Py_TYPE(o)).tp_name).to_bytes();
++    let tuple = ffi::PyTuple_CheckExact(o) != 0 || (ffi::PyTuple_Check(o) != 0 && name == b"torch.Size");
++    tuple && (0..ffi::PyTuple_GET_SIZE(o)).all(|i| lasting(ffi::PyTuple_GET_ITEM(o, i)))
++}
++
+ /// Whether `same_value` can tell a later value from this one: what an
+ /// exported form may have as a constant under a check.
+ pub unsafe fn checkable(o: Obj) -> bool {
+@@ -3339,6 +3401,7 @@ fn path(unit: &Unit, cx: &PassCx, roles: &[Role], first: usize, end: usize, ends
+         mutates: false,
+         pinned: Vec::new(),
+         constants: Vec::new(),
++        folded: Vec::new(),
+         exported: Shared::new(Vec::new()),
+         registers: Shared::new(Vec::new()),
+     }
+@@ -4050,6 +4113,7 @@ impl Path {
+             mutates: false,
+             pinned: Vec::new(),
+             constants: Vec::new(),
++            folded: Vec::new(),
+             exported: Shared::new(Vec::new()),
+             registers: Shared::new(Vec::new()),
+         }
+@@ -4094,6 +4158,8 @@ impl Path {
+         // The values that are no tensors and that the graph computes.
+         let mut wanted = vec![false; nregs];
+         let (mut outputs, mut exits) = (Vec::new(), Vec::new());
++        let mut folded: Vec<PathValue> = Vec::new();
++        let values = &trace.rec.values;
+         let (mut branches, mut calls) = (0, 0);
+         let constants: std::cell::RefCell<Vec<PathValue>> = std::cell::RefCell::new(Vec::new());
+         for inst in trace.body.iter_mut().rev() {
+@@ -4206,6 +4272,18 @@ impl Path {
+                     takes(&inst.op, &mut wanted, &mut need);
+                     Stage::Inside
+                 }
++                // The same in every call the form is for, and a value that
++                // cannot change: the form has it.
++                _ if needed
++                    && def.late
++                    && def.fixed
++                    && !def.node
++                    && !container(&inst.op)
++                    && unsafe { lasting(values.get(dst as usize).copied().unwrap_or(std::ptr::null_mut())) } =>
++                {
++                    folded.push(dst);
++                    Stage::Skipped
++                }
+                 _ if needed => uses(&inst.op, &mut need),
+                 _ => Stage::Skipped,
+             };
+@@ -4227,6 +4305,7 @@ impl Path {
+         let mut there = vec![false; nregs];
+         trace.inputs.iter().for_each(|(_, v)| there[*v as usize] = true);
+         outputs.iter().for_each(|v| there[*v as usize] = true);
++        folded.iter().for_each(|v| there[*v as usize] = true);
+         for inst in trace.body.iter().filter(|inst| matches!(inst.stage, Stage::Before | Stage::After)) {
+             if inst.dst != NONE {
+                 there[inst.dst as usize] = true;
+@@ -4263,6 +4342,7 @@ impl Path {
+             mutates: trace.writes,
+             pinned: std::mem::take(&mut trace.pinned),
+             constants,
++            folded,
+             exported: Shared::new(Vec::new()),
+             registers: Shared::new(Vec::new()),
+         }
+diff --git a/rust/src/lib.rs b/rust/src/lib.rs
+index 99cc0e4..b8feb5f 100644
+--- a/rust/src/lib.rs
++++ b/rust/src/lib.rs
+@@ -37,6 +37,8 @@ fn _cfg_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+     m.add_function(wrap_pyfunction!(pyapi::clear_shortcuts, m)?)?;
+     m.add_function(wrap_pyfunction!(pyapi::profiling_depth, m)?)?;
+     m.add_function(wrap_pyfunction!(pyapi::frames_offered, m)?)?;
++    m.add_function(wrap_pyfunction!(pyapi::places, m)?)?;
++    m.add_function(wrap_pyfunction!(pyapi::lie_at, m)?)?;
+     m.add_function(wrap_pyfunction!(pyapi::leave_to_interpreter, m)?)?;
+     m.add_function(wrap_pyfunction!(pyapi::load_passes, m)?)?;
+     m.add_class::<pyapi::NativePass>()?;
+diff --git a/rust/src/pyapi.rs b/rust/src/pyapi.rs
+index af05668..b33a475 100644
+--- a/rust/src/pyapi.rs
++++ b/rust/src/pyapi.rs
+@@ -117,6 +117,51 @@ pub fn frames_offered() -> bool {
+     vm::frames_offered()
+ }
+ 
++/// Where the memory of each tensor of a list lies, as native words in a
++/// bytes object (zero for what is no tensor): what `lie_at` is asked with
++/// later.
++#[pyfunction]
++pub fn places<'py>(py: Python<'py>, tensors: &Bound<'py, PyList>) -> PyResult<Bound<'py, PyBytes>> {
++    let api = capi::api().ok_or_else(|| PyRuntimeError::new_err("torch.vm is not initialized"))?;
++    let list = tensors.as_ptr();
++    let mut found: Vec<u8> = Vec::new();
++    unsafe {
++        for i in 0..ffi::PyList_GET_SIZE(list) {
++            let mut info = capi::TcfgTensorInfo::empty();
++            let tensor = (api.tensor_info)(ffi::PyList_GET_ITEM(list, i), &mut info) != 0;
++            let at = if tensor { info.data as usize } else { 0 };
++            found.extend_from_slice(&at.to_ne_bytes());
++        }
++    }
++    Ok(PyBytes::new(py, &found))
++}
++
++/// Whether the tensors of a list lie where `places` found them, or others
++/// like them.
++#[pyfunction]
++pub fn lie_at(tensors: &Bound<'_, PyList>, places: &Bound<'_, PyBytes>) -> bool {
++    let Some(api) = capi::api() else {
++        return false;
++    };
++    let (list, expected) = (tensors.as_ptr(), places.as_bytes());
++    let word = std::mem::size_of::<usize>();
++    unsafe {
++        let count = ffi::PyList_GET_SIZE(list) as usize;
++        if expected.len() != count * word {
++            return false;
++        }
++        for i in 0..count {
++            let mut info = capi::TcfgTensorInfo::empty();
++            let tensor = (api.tensor_info)(ffi::PyList_GET_ITEM(list, i as isize), &mut info) != 0;
++            let at = if tensor { info.data as usize } else { 0 };
++            if at.to_ne_bytes() != expected[i * word..(i + 1) * word] {
++                return false;
++            }
++        }
++    }
++    true
++}
++
+ /// Leaves the functions whose code is in one of these files, or under one of
+ /// these directories (with a trailing separator), to the interpreter, with
+ /// all they call; `file::qualname` names one function of a file.
+diff --git a/rust/src/vm.rs b/rust/src/vm.rs
+index b214800..53a35e3 100644
+--- a/rust/src/vm.rs
++++ b/rust/src/vm.rs
+@@ -1083,11 +1083,46 @@ thread_local! {
+     static HOOKED: std::cell::Cell<*const Compiled> = const { std::cell::Cell::new(std::ptr::null()) };
+ }
+ 
++/// What the interpreter calls to show a warning: `warnings._showwarnmsg`,
++/// and before it the `__init__` of `warnings.WarningMessage`. 0 until it
++/// was looked up, 1 if it is not there.
++static SHOWS_WARNINGS: [std::sync::atomic::AtomicUsize; 2] =
++    [std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0)];
++
++thread_local! {
++    /// How many frames the interpreter entered on this thread to show
++    /// warnings (`take_frame`).
++    static WARNING_FRAMES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
++}
++
++/// Looks up what shows a warning, once. The function is kept: it is known
++/// by where it is.
++unsafe fn shows_warnings() {
++    if SHOWS_WARNINGS[0].load(Ordering::Relaxed) != 0 {
++        return;
++    }
++    let _nobody = Hooked::nobody();
++    let module = ffi::PyImport_ImportModule(c"warnings".as_ptr());
++    let attr = |of: Obj, name: &std::ffi::CStr| if of.is_null() { null_mut() } else { ffi::PyObject_GetAttrString(of, name.as_ptr()) };
++    let shows = attr(module, c"_showwarnmsg");
++    let class = attr(module, c"WarningMessage");
++    let made = attr(class, c"__init__");
++    ffi::PyErr_Clear();
++    xdecref(module);
++    xdecref(class);
++    for (at, found) in [shows, made].into_iter().enumerate() {
++        let function = !found.is_null() && ffi::PyFunction_Check(found) != 0;
++        SHOWS_WARNINGS[at].store(if function { found as usize } else { 1 }, Ordering::Relaxed);
++    }
++}
++
+ /// What `exec_profiled` takes down in front of an instruction that can run
+ /// code that is not the VM's, for the facts it finds behind it.
+ struct Probe {
+-    /// How many frames the interpreter has counted.
++    /// How many frames the interpreter has counted, and how many of them
++    /// to show warnings.
+     frames: u64,
++    warned: u64,
+     /// The tensors the instruction is given, each with its version counter.
+     versions: Vec<(Obj, u64)>,
+     /// For a call: what a call further up was waiting to learn of its callee.
+@@ -1096,6 +1131,7 @@ struct Probe {
+ 
+ impl Probe {
+     unsafe fn start(callees: &Callees, regs: &[Obj], op: &Op, api: &TcfgApi) -> Probe {
++        shows_warnings();
+         // The interpreter counts the frames it starts while they are wanted.
+         if let (Some(want), Some(_)) = (api.frame_want, api.frame_count) {
+             want(1);
+@@ -1112,13 +1148,15 @@ impl Probe {
+         let versions = versions_of(&given, api);
+         let call = matches!(op, Op::Call { .. } | Op::CallMethod { .. } | Op::CallEx { .. });
+         let outer = call.then(|| (callees.callee_asked.replace(true), callees.callee_seen.take()));
+-        Probe { frames: api.frame_count.map_or(0, |count| count()), versions, outer }
++        Probe { frames: api.frame_count.map_or(0, |count| count()), warned: WARNING_FRAMES.with(|w| w.get()), versions, outer }
+     }
+ 
+     unsafe fn finish(self, callees: &Callees, facts: &mut InstFacts, api: &TcfgApi) {
+         // Where the interpreter does not tell of its frames, one may have
+-        // been entered.
+-        facts.frames |= api.frame_count.is_none_or(|count| count() != self.frames);
++        // been entered. The frames of a warning that was shown are not the
++        // instruction's: what it warns of once, it does not do again.
++        let shown = WARNING_FRAMES.with(|w| w.get()) - self.warned;
++        facts.frames |= api.frame_count.is_none_or(|count| count() - self.frames != shown);
+         if let (Some(want), Some(_)) = (api.frame_want, api.frame_count) {
+             want(-1);
+         }
+@@ -1364,6 +1402,46 @@ impl Drop for Warming<'_> {
+ 
+ /// Says, for as long as it lives, whom the frames that the interpreter
+ /// starts on this thread are offered to.
++/// A form whose callable was started in front of the checks of its path
++/// (`Exported::ahead`). Unless the call of the callable follows, it is told
++/// that it was started for nothing.
++struct Flight(Option<Arc<Exported>>);
++
++impl Flight {
++    /// The call of this form follows, or does not.
++    unsafe fn lands(&mut self, form: &Arc<Exported>) {
++        if self.0.as_ref().is_some_and(|started| Arc::ptr_eq(started, form)) {
++            self.0 = None;
++        } else {
++            self.miss();
++        }
++    }
++
++    unsafe fn miss(&mut self) {
++        let Some(form) = self.0.take() else {
++            return;
++        };
++        let Some((_, missed)) = &form.ahead else {
++            return;
++        };
++        let (mut kind, mut value, mut trace) = (null_mut(), null_mut(), null_mut());
++        ffi::PyErr_Fetch(&mut kind, &mut value, &mut trace);
++        let _nobody = Hooked::nobody();
++        let said = ffi::PyObject_CallNoArgs(missed.as_ptr());
++        if said.is_null() {
++            ffi::PyErr_Clear();
++        }
++        xdecref(said);
++        ffi::PyErr_Restore(kind, value, trace);
++    }
++}
++
++impl Drop for Flight {
++    fn drop(&mut self) {
++        unsafe { self.miss() }
++    }
++}
++
+ struct Hooked {
+     outer: *const Compiled,
+ }
+@@ -1427,6 +1505,17 @@ pub unsafe extern "C" fn take_frame(function: Obj, frame: *mut std::ffi::c_void,
+     }
+     let owner = &*owner;
+     let interpret = || (capi::api().unwrap_unchecked().frame_interpret.unwrap_unchecked())(frame);
++    if SHOWS_WARNINGS.iter().any(|shows| shows.load(Ordering::Relaxed) == function as usize) {
++        // A warning is shown by the interpreter, with all that calls, and
++        // the frames of that are counted apart: this one, which the
++        // interpreter has counted already, and those it enters.
++        let count = || capi::api().unwrap_unchecked().frame_count.map_or(0, |count| count());
++        let before = count();
++        let _nobody = Hooked::nobody();
++        *result = interpret();
++        WARNING_FRAMES.with(|w| w.set(w.get() + count() - before + 1));
++        return 1;
++    }
+     let form = owner.function_form(function);
+     *result = if form == INTERPRETED {
+         interpret()
+@@ -4551,16 +4640,35 @@ impl Compiled {
+         // What else a compiled graph depends on is asked of Python: only
+         // for a call that is like one a form was made for in all the rest.
+         let mut state: Option<u64> = None;
+-        for (at, path) in site.paths().into_iter().enumerate() {
++        // The paths in the order they last ran. A path that goes further
++        // than the one that ran last (one that was taken down while a hook
++        // stood on a module ends in front of it, and is still a way through
++        // the function when the hook is gone) is tried first now and then.
++        let mut paths = site.paths();
++        let longer = paths.iter().skip(1).any(|other| other.operators.len() > paths[0].operators.len());
++        let mut sorted = false;
++        if longer && site.since_longer.fetch_add(1, Ordering::Relaxed) + 1 >= site.until_longer.load(Ordering::Relaxed) {
++            site.since_longer.store(0, Ordering::Relaxed);
++            paths.sort_by_key(|path| std::cmp::Reverse(path.operators.len()));
++            sorted = true;
++        }
++        let last = paths.first().cloned();
++        for path in paths {
+             match self.run_path(site, &path, regs, frames, api, world, &mut state) {
+                 Ran::Landed(landing) => {
+                     site.hits.fetch_add(1, Ordering::Relaxed);
++                    let mut held = site.variants.borrow_mut();
++                    let at = held.iter().position(|other| Arc::ptr_eq(other, &path)).unwrap_or(0);
+                     if at > 0 {
+-                        let mut paths = site.variants.borrow_mut();
+-                        if paths.get(at).is_some_and(|other| Arc::ptr_eq(other, &path)) {
+-                            let ran = paths.remove(at);
+-                            paths.insert(0, ran);
+-                        }
++                        let ran = held.remove(at);
++                        held.insert(0, ran);
++                    }
++                    if sorted {
++                        // The longest one, or the one it was before.
++                        let longest = last.is_some_and(|first| Arc::ptr_eq(&first, &path));
++                        let wait = site.until_longer.load(Ordering::Relaxed);
++                        let next = if longest { graph::LONGER_FIRST } else { (2 * wait).min(graph::LONGER_LAST) };
++                        site.until_longer.store(next, Ordering::Relaxed);
+                     }
+                     return PathEnd::Landed(landing);
+                 }
+@@ -5149,6 +5257,33 @@ impl Compiled {
+             }
+             since.map(|_| std::time::Instant::now())
+         };
++        // What was made of the form that ran last may start in front of the
++        // checks, with the arguments that are there already: the values the
++        // path reads of the function's.
++        let mut flight = Flight(None);
++        let last = path.exported.borrow().first().filter(|form| form.ahead.is_some() && of_world(form)).cloned();
++        if let Some(form) = last {
++            let known: Vec<Obj> = form
++                .args
++                .iter()
++                .map(|place| {
++                    let read = place.item == NONE && path.inputs.iter().any(|(_, made)| *made == place.value);
++                    let held = if read { own[place.value as usize] } else { null_mut() };
++                    if held.is_null() || capi::is_unboxed(held) { ffi::Py_None() } else { held }
++                })
++                .collect();
++            let started = {
++                let _nobody = Hooked::nobody();
++                let (ahead, _) = form.ahead.as_ref().unwrap();
++                ffi::PyObject_Vectorcall(ahead.as_ptr(), known.as_ptr(), known.len(), null_mut())
++            };
++            if started.is_null() {
++                ffi::PyErr_Clear();
++            } else if started == ffi::Py_True() {
++                flight.0 = Some(form);
++            }
++            xdecref(started);
++        }
+         let staged = self.run_stage(site, path, Stage::Before, &mut own, function, api);
+         if staged != Staged::Done {
+             leave(own);
+@@ -5242,6 +5377,7 @@ impl Compiled {
+                 if counted { info.version } else { capi::TCFG_NO_VERSION }
+             };
+             let before: Vec<u64> = exported.bumps.iter().map(|(k, _)| version(*k)).collect();
++            flight.lands(&exported);
+             let result = ffi::PyObject_Vectorcall(callable.as_ptr(), args.as_ptr(), args.len(), null_mut());
+             if !result.is_null() {
+                 // The version counters end where the operations leave them.
+@@ -5331,6 +5467,10 @@ impl Compiled {
+             capi::release(std::mem::replace(&mut own[*v as usize], new_ref(item(i))));
+         }
+         ffi::Py_DECREF(result);
++        // What the form keeps of what is computed behind the callable.
++        for (v, value) in &exported.folded {
++            capi::release(std::mem::replace(&mut own[*v as usize], new_ref(value.as_ptr())));
++        }
+         // Nothing of what the callable did is to be seen yet: where an
+         // instruction behind it cannot run, its results are dropped.
+         let staged = self.run_stage(site, path, Stage::After, &mut own, function, api);
+@@ -7579,6 +7719,19 @@ impl Compiled {
+         if graph::debug() {
+             let (steps, ops) = (path.body.len(), path.operators.len());
+             eprintln!("torch.vm graph {}: a path of {} instructions, {} operations, ends at {:?}: {}", site.name, steps, ops, land, path.ends);
++            if std::env::var_os("TORCH_VM_GRAPH_DEBUG").is_some_and(|v| v == "2") {
++                // What runs behind the callable, and what the callable gives for it.
++                for inst in path.body.iter().filter(|inst| matches!(inst.stage, graph::Stage::After | graph::Stage::Landing)) {
++                    let owner = &*path.owners[inst.owner as usize];
++                    let stage = if inst.stage == graph::Stage::After { "after" } else { "landing" };
++                    eprintln!("torch.vm graph {}:   {} %{} = {} (in {}){}", site.name, stage, inst.dst as i64, owner.func.op_repr(&inst.op), owner.func.qualname, if inst.assert.is_some() { " [check]" } else { "" });
++                }
++                for v in &path.outputs {
++                    let made = path.body.iter().find(|inst| inst.dst == *v);
++                    let text = made.map_or(String::new(), |inst| (&*path.owners[inst.owner as usize]).func.op_repr(&inst.op));
++                    eprintln!("torch.vm graph {}:   gives %{} = {}", site.name, v, text);
++                }
++            }
+         }
+         // What an operation with several results gave is needed whole
+         // behind the path, and a graph gives back its items: the path is
+@@ -7624,14 +7777,26 @@ impl Compiled {
+             eprintln!("torch.vm graph {}: not exported for this call: {}", site.name, why);
+         }
+         let (modes, included, excluded, state) = world;
++        let folded: Vec<(PathValue, PyObj)> =
++            path.folded.iter().map(|v| (*v, PyObj::from_borrowed(t.rec.values[*v as usize]))).collect();
+         let form = |callable: Option<PyObj>, guards: Vec<(usize, PyObj)>, closed: Option<String>| {
+             let proven = std::sync::atomic::AtomicBool::new(false);
+             let hits = AtomicU64::new(0);
+             let sizes = crate::shapes::ShapeGuard::exact(&numbers);
+             let varying = if closed.as_deref() == Some(graph::EVER_NEW_REASON) { changing.clone() } else { Vec::new() };
+             let (last, repeats) = (crate::pyffi::Shared::new(Vec::new()), std::sync::atomic::AtomicU32::new(0));
++            let method = |name: &std::ffi::CStr| {
++                let found = callable.as_ref().map_or(null_mut(), |c| ffi::PyObject_GetAttrString(c.as_ptr(), name.as_ptr()));
++                if found.is_null() {
++                    ffi::PyErr_Clear();
++                    None
++                } else {
++                    Some(PyObj::from_owned(found))
++                }
++            };
++            let ahead = method(c"ahead").zip(method(c"missed"));
+             let form = Exported {
+-                modes, included, excluded, state, checks, sizes, args, guards, callable, varying, last, repeats, aliases, bumps, closed, proven, hits,
++                modes, included, excluded, state, checks, sizes, args, guards, callable, ahead, folded, varying, last, repeats, aliases, bumps, closed, proven, hits,
+             };
+             Arc::new(form)
+         };
+diff --git a/test/test_vm.py b/test/test_vm.py
+index dee554c..7be0159 100644
+--- a/test/test_vm.py
++++ b/test/test_vm.py
+@@ -9688,5 +9688,314 @@ class TestVmApi(TestCase):
+         self.assertEqual(seen.count("before"), 8)
+ 
+ 
++def keep_graph(gm, input_types):
++    """A pass over graphs that leaves the graph what it is."""
++    return gm
++
++
++class TestVmGraphExtras(TestCase):
++    """SplitPools, what a form keeps of what is computed behind its graph,
++    the order paths are tried in, and graphs on a GPU run as CUDA graphs."""
++
++    def test_split_pools_gives_what_one_pool_gives(self):
++        def f(x):
++            y = x.sin() * 2
++            a = torch.max_pool2d(y, 5, 1, 2)
++            b = torch.nn.functional.max_pool2d(y, (7, 3), stride=(2, 1), padding=(3, 1), dilation=(1, 2))
++            c = torch.max_pool2d(y, 4)
++            d = torch.max_pool2d(y, 3, 2, 1)
++            return a.cos(), b.cos(), c.cos(), d.cos()
++
++        seen = []
++
++        def look(gm, input_types):
++            seen.append([str(node.target) for node in gm.graph.nodes if "max_pool2d" in str(node.target)])
++            return gm
++
++        g = torch.vm(f, passes=(*DEFAULT, P.Graphs(), P.SplitPools(), look), fallback=False)
++        x = torch.randn(2, 3, 20, 24)
++        x[0, 0, 3, 3] = float("nan")
++        x[1, 2, 0, 0] = float("inf")
++        x[1, 1, 5, 5] = -float("inf")
++        for _ in range(5):
++            got = g(x)
++        for one, other in zip(got, f(x)):
++            self.assertEqual(one, other, atol=0, rtol=0, equal_nan=True)
++        # The three windows of 16 elements or more are two pools each; the
++        # 3x3 one is left as it is.
++        self.assertEqual(len(seen[-1]), 7)
++        self.assertEqual(torch.vm.regions(g)[0]["state"], "compiled")
++        self.assertTrue(torch.vm.is_exact((*DEFAULT, P.Graphs(), P.SplitPools())))
++
++    def test_split_pools_leaves_small_windows_and_ceil_mode(self):
++        def f(x):
++            y = x.sin() * 2
++            return torch.max_pool2d(y, 3, 2, 1).cos(), torch.max_pool2d(y, 5, 2, 2, 1, True).cos()
++
++        seen = []
++
++        def look(gm, input_types):
++            seen.append(sum("max_pool2d" in str(node.target) for node in gm.graph.nodes))
++            return gm
++
++        g = torch.vm(f, passes=(*DEFAULT, P.Graphs(), P.SplitPools(), look), fallback=False)
++        x = torch.randn(2, 3, 17, 19)
++        for _ in range(4):
++            got = g(x)
++        for one, other in zip(got, f(x)):
++            self.assertEqual(one, other, atol=0, rtol=0)
++        self.assertEqual(seen[-1], 2)
++
++    def test_what_is_read_of_a_tensor_of_the_graph_behind_it(self):
++        # The sizes, the device and the dtype of a tensor the graph computes
++        # are the same in every call a form is for: the form keeps them, and
++        # another size is another form with its own.
++        def f(x, scale):
++            y = (x.sin() * scale).cos() + 1
++            n, m = y.shape
++            z = torch.arange(m, device=y.device, dtype=y.dtype)
++            return (y * z).tanh().sum(), (n, m), y.device, y.dtype, y.shape
++
++        g = torch.vm(f, passes=with_graphs(keep_graph), fallback=False)
++        for size in ((2, 3), (2, 3), (2, 3), (4, 5), (4, 5), (2, 3), (4, 5), (2, 3)):
++            x = torch.randn(size)
++            got, want = g(x, 2.0), f(x, 2.0)
++            self.assertEqual(got[0], want[0], atol=0, rtol=0)
++            self.assertEqual(got[1:], want[1:])
++            self.assertIs(type(got[4]), torch.Size)
++        x = torch.randn(2, 3, dtype=torch.float64)
++        for _ in range(3):
++            got, want = g(x, 2.0), f(x, 2.0)
++            self.assertEqual(got[0], want[0], atol=0, rtol=0)
++            self.assertEqual(got[1:], want[1:])
++
++    def test_a_longer_path_is_tried_again_once_a_hook_is_gone(self):
++        class Net(torch.nn.Module):
++            def __init__(self):
++                super().__init__()
++                layers = []
++                for _ in range(6):
++                    layers += [torch.nn.Linear(8, 8), torch.nn.Tanh()]
++                self.layers = torch.nn.ModuleList(layers)
++
++            def forward(self, x):
++                for layer in self.layers:
++                    x = layer(x)
++                return x
++
++        model = Net().eval()
++        exported = []
++
++        def count(gm, input_types):
++            exported.append(sum(node.op.startswith("call") for node in gm.graph.nodes))
++            return gm
++
++        g = torch.vm(model, passes=with_graphs(count, min_ops=3), fallback=False, demote=False)
++        x = torch.randn(4, 8)
++
++        def last():
++            (found,) = [r for r in torch.vm.regions(g) if "Net.forward (block 0)" in r["where"]]
++            return found["ops"]
++
++        with torch.no_grad():
++            for _ in range(8):
++                self.assertEqual(g(x), model(x), atol=0, rtol=0)
++            self.assertEqual((exported, last()), ([12], 12))
++            # With a hook on a module in the middle a path ends in front of
++            # its call: a way through the function without the hook too.
++            handle = model.layers[8].register_forward_hook(lambda module, args, output: output * 2)
++            for _ in range(8):
++                self.assertEqual(g(x), model(x), atol=0, rtol=0)
++            self.assertEqual((exported, last()), ([12, 8], 8))
++            handle.remove()
++            for _ in range(40):
++                self.assertEqual(g(x), model(x), atol=0, rtol=0)
++        # The path that goes through the whole function is the one that
++        # runs again, and nothing was exported for that.
++        self.assertEqual((exported, last()), ([12, 8], 12))
++
++    def conv_net(self, device):
++        torch.manual_seed(0)
++        model = torch.nn.Sequential(
++            torch.nn.Conv2d(3, 8, 3, padding=1),
++            torch.nn.BatchNorm2d(8),
++            torch.nn.LeakyReLU(0.1),
++            torch.nn.Conv2d(8, 8, 1),
++            torch.nn.MaxPool2d(5, 1, 2),
++            torch.nn.Conv2d(8, 4, 3, padding=1),
++        )
++        return model.to(device).eval()
++
++    def cuda_graph_follows(self, weight_layout):
++        import copy as copy_module
++
++        model = self.conv_net("cuda")
++        eager = copy_module.deepcopy(model)
++        behind = P.Inductor(cuda_graphs=True, weight_layout=weight_layout)
++        g = torch.vm(model, passes=(*DEFAULT, P.Graphs(), P.SplitPools(), behind), fallback=False)
++        xs = [torch.randn(2, 3, 16, 16, device="cuda") for _ in range(3)]
++
++        def right(x):
++            self.assertEqual(g(x), eager(x), atol=5e-3, rtol=5e-3)
++
++        with torch.no_grad():
++            for i in range(12):
++                right(xs[i % 3])
++            self.assertEqual(g.stats()["graphs"]["given_up"], 0)
++            # What a call gave is the caller's: later calls do not write it.
++            first, second = g(xs[0]), g(xs[1])
++            g(xs[2])
++            self.assertEqual(first, eager(xs[0]), atol=5e-3, rtol=5e-3)
++            self.assertEqual(second, eager(xs[1]), atol=5e-3, rtol=5e-3)
++            # One tensor again and again, written in place between the calls.
++            x = xs[0].clone()
++            for _ in range(3):
++                right(x)
++            x.mul_(0.5)
++            right(x)
++            # Weights written in place, through a view, and replaced.
++            for mine, theirs in ((model[0], eager[0]), (model[3], eager[3]), (model[5], eager[5])):
++                for write in (lambda w: w.mul_(0.5), lambda w: w.view(-1)[::2].zero_(), lambda w: w.detach().add_(0.25)):
++                    write(mine.weight)
++                    write(theirs.weight)
++                    right(xs[1])
++            model[1].running_mean.add_(0.5)
++            eager[1].running_mean.add_(0.5)
++            right(xs[2])
++            model[5].bias = torch.nn.Parameter(model[5].bias.detach().clone() + 1)
++            eager[5].bias = torch.nn.Parameter(eager[5].bias.detach().clone() + 1)
++            for i in range(4):
++                right(xs[i % 3])
++            # Every weight somewhere else.
++            model.double()
++            eager.double()
++            right(xs[0].double())
++            model.float()
++            eager.float()
++            for i in range(6):
++                right(xs[i % 3])
++            # Other sizes, and back.
++            other = torch.randn(5, 3, 12, 20, device="cuda")
++            for x in (other, other, xs[0], other, xs[1], xs[2]):
++                right(x)
++            # A hook, and none.
++            handle = model[3].register_forward_hook(lambda module, args, output: output * 2)
++            self.assertEqual(g(xs[0]), model(xs[0]), atol=5e-3, rtol=5e-3)
++            handle.remove()
++            for i in range(40):
++                right(xs[i % 3])
++
++    @unittest.skipUnless(torch.cuda.is_available(), "needs a GPU")
++    def test_cuda_graphs_follow_what_eager_does(self):
++        self.cuda_graph_follows("")
++
++    @unittest.skipUnless(torch.cuda.is_available(), "needs a GPU")
++    def test_cuda_graphs_with_kept_weight_layouts(self):
++        self.cuda_graph_follows("keep")
++
++    @unittest.skipUnless(torch.cuda.is_available(), "needs a GPU")
++    def test_cuda_graphs_hand_out_large_results(self):
++        self.large_results(True)
++
++    @unittest.skipUnless(torch.cuda.is_available(), "needs a GPU")
++    def test_cuda_graphs_copy_large_results(self):
++        self.large_results(False)
++
++    def large_results(self, hand_out):
++        # A large result that is handed out without a copy gets memory of
++        # its own when the graph runs again while somebody has it: whatever
++        # is held of earlier calls stays what it was, as with copies.
++        torch.manual_seed(0)
++        model = torch.nn.Sequential(
++            torch.nn.Conv2d(3, 16, 3, padding=1), torch.nn.LeakyReLU(0.1), torch.nn.Conv2d(16, 16, 1)
++        )
++        model = model.cuda().eval()
++
++        def both(x):
++            y = model(x)
++            return y, (y * 2).tanh()
++
++        behind = P.Inductor(cuda_graphs=True, hand_out=hand_out)
++        g = torch.vm(both, passes=(*DEFAULT, P.Graphs(), behind), fallback=False)
++        xs = [torch.randn(8, 3, 128, 128, device="cuda") for _ in range(4)]
++
++        def close(got, want):
++            self.assertEqual(got, want, atol=5e-3, rtol=5e-3)
++
++        with torch.no_grad():
++            wants = [both(x) for x in xs]
++            for i in range(12):
++                close(g(xs[i % 4]), wants[i % 4])
++            self.assertGreaterEqual(wants[0][0].numel() * 4, 1 << 20)
++            # Dropped at once, held whole, held in a list.
++            first = g(xs[0])
++            held = [g(xs[i % 4]) for i in range(1, 6)]
++            close(first, wants[0])
++            for i, got in enumerate(held, 1):
++                close(got, wants[i % 4])
++            # A view, a slice and another tensor on the memory of a result,
++            # with the result itself gone.
++            out = g(xs[1])
++            view, piece, other = out[0][2, 3], out[1][4:6], out[0].data
++            del out, first, held
++            for i in range(5):
++                close(g(xs[i % 4]), wants[i % 4])
++            close(view, wants[1][0][2, 3])
++            close(piece, wants[1][1][4:6])
++            close(other, wants[1][0])
++            del view, piece, other
++            # A result that is written to is the caller's alone.
++            out = g(xs[2])[0]
++            out.add_(1.0)
++            for i in range(5):
++                close(g(xs[i % 4]), wants[i % 4])
++            close(out - 1.0, wants[2][0])
++            self.assertFalse(out._is_view())
++            self.assertEqual(g.stats()["graphs"]["given_up"], 0)
++
++    def test_where_tensors_lie(self):
++        from torch import _cfg_rs
++
++        tensors = [torch.zeros(3), torch.ones(4, 4)[1:], torch.nn.Parameter(torch.zeros(2))]
++        places = _cfg_rs.places(tensors)
++        self.assertTrue(_cfg_rs.lie_at(tensors, places))
++        self.assertFalse(_cfg_rs.lie_at([tensors[0], tensors[1], torch.zeros(2)], places))
++        self.assertFalse(_cfg_rs.lie_at(tensors[:2], places))
++        tensors[0].add_(1)
++        self.assertTrue(_cfg_rs.lie_at(tensors, places))
++        tensors[0].resize_(4096)
++        self.assertFalse(_cfg_rs.lie_at(tensors, places))
++
++    @unittest.skipUnless(torch.cuda.is_available(), "needs a GPU")
++    def test_cuda_graphs_are_for_calls_without_gradients(self):
++        model = self.conv_net("cuda")
++        g = torch.vm(model, passes=(*DEFAULT, P.Graphs(), P.Inductor(cuda_graphs=True)), fallback=False)
++        x = torch.randn(2, 3, 16, 16, device="cuda")
++        for _ in range(5):
++            out = g(x)
++        self.assertEqual(out, model(x), atol=5e-3, rtol=5e-3)
++        self.assertTrue(out.requires_grad)
++        out.sum().backward()
++        self.assertIsNotNone(model[0].weight.grad)
++
++    def test_inductor_options(self):
++        self.assertEqual(repr(P.Inductor(cuda_graphs=True)), "torch.vm.passes.Inductor(cuda_graphs=True)")
++        with self.assertRaises(ValueError):
++            P.Inductor(weight_layout="keep")
++        with self.assertRaises(ValueError):
++            P.Inductor(cuda_graphs=True, weight_layout="other")
++        with self.assertRaises(ValueError):
++            P.Inductor(hand_out=True)
++        # Without a GPU the option changes nothing.
++        def f(x, w):
++            return torch.tanh(x @ w).sum() + (x * 2).mean()
++
++        g = torch.vm(f, passes=(*DEFAULT, P.Graphs(), P.Inductor(cuda_graphs=True)), fallback=False)
++        x, w = torch.randn(4, 8), torch.randn(8, 8)
++        for _ in range(4):
++            out = g(x, w)
++        self.assertEqual(out, f(x, w), atol=1e-5, rtol=1e-5)
++
++
+ if __name__ == "__main__":
+     run_tests()
+diff --git a/torch/vm/_cudagraphs.py b/torch/vm/_cudagraphs.py
+new file mode 100644
+index 0000000..ac758ef
+--- /dev/null
++++ b/torch/vm/_cudagraphs.py
+@@ -0,0 +1,631 @@
++"""What a pass compiled for a graph on a GPU, run as one CUDA graph.
++
++What a compiler makes of a graph is a function that starts one kernel after
++the other, and on a GPU the time between two of them is the processor's. A
++CUDA graph is the kernels of one run of such a function, taken down with
++their arguments and started again as one. :class:`Replayed` stands in front
++of what was compiled and does that for the calls it can be shown right for;
++every other call runs what was compiled as it is.
++
++What a CUDA graph fixes is where its kernels read and write. So:
++
++- A tensor the graph is given is read where it lies. The tensors that lay at
++  the same place in two calls in a row (the weights of a model) are read
++  there, and every call checks that they still lie there; what they hold is
++  read when the kernels run, so a weight that was written in place is
++  followed. The other tensors are copied to a place of the graph's own in
++  front of it. When a tensor is found somewhere else (a parameter that was
++  replaced, a model that was moved and moved back), the graph is taken
++  down again and reads it where it lies now; one that is found somewhere
++  else a second time is copied from then on.
++- What the graph gives lies in memory of the graph that the next run writes
++  again, so a call gets copies of its own. Where that is asked for
++  (``hand_out``), a large tensor is not copied when it is handed out: it
++  is copied when the graph is about to run again and somebody still has
++  it, which its reference counts tell (those of the tensor, and of its
++  memory, which a view of it holds). The tensor that was handed out is
++  then given the copy as its memory. While a view of one is alive, which
++  cannot be given other memory, the graph does not run: what was compiled
++  does. What this cannot see is somebody who took the address of the
++  memory and kept it (a DLPack capsule, ``__cuda_array_interface__``):
++  for them the next run writes the tensor. That is given up, and so it is
++  only done when asked for.
++- The graph can be started in front of the checks that say whether a call
++  is one it was made for (``ahead``): its kernels then run while the checks
++  do. Until the call itself comes it has written to nothing but its own
++  memory, and a call that does not come (``missed``) leaves nothing behind.
++  For that the tensors it reads in place are kept, so that the memory it
++  reads is there whatever became of them. A graph that draws random numbers
++  is not started ahead: the numbers of a run that is dropped would be
++  missing.
++- The weights of convolutions can be handed to what was compiled laid
++  out as the kernels want them (channels last), so that they are not
++  copied into that layout by every run (``channels_last_weights``). A
++  weight of a convolution over single elements (1x1) lies in memory the same
++  way in both layouts, so the graph is given a view of it: that is always
++  right. For the others a copy is kept and made again when the weight is
++  another tensor or its version counter has moved. That follows every
++  write that autograd would see (``w.add_()``, ``w.copy_()``, a write
++  through a view or through ``w.detach()``); it does not follow a write
++  that moves no counter: one through ``w.data``, or by another library.
++  That is given up, and so it is only done when asked for.
++- Nothing that the function does on the processor runs again: the function
++  must do the same there in every call. The calls of one form of a graph
++  have tensors of the same sizes, and what was compiled has no branches.
++  A graph that makes a tensor on the processor from anything but numbers,
++  that writes to what it is given, that gives back what it is given or two
++  views of one tensor, or whose tensors require a gradient, runs as it is.
++"""
++
++import copy as _copy
++import os
++import sys
++import threading
++from collections.abc import Callable
++from typing import Any
++
++import torch
++
++from . import _types
++
++
++_PTR = torch.Tensor.data_ptr
++
++
++def _places(tensors: list[torch.Tensor]) -> Any:
++    """Where the memory of some tensors lies, for `_lie_at`: asked of the
++    engine in one call, which is what a call that starts ahead waits for."""
++    from torch import _cfg_rs
++
++    return _cfg_rs.places(tensors)
++
++
++def _lie_at(tensors: list[torch.Tensor], places: Any) -> bool:
++    from torch import _cfg_rs
++
++    return _cfg_rs.lie_at(tensors, places)
++
++# The functions that make a tensor from numbers alone: what such a call gives
++# on the processor is the same in every run.
++_FROM_NUMBERS = frozenset(
++    {"tensor", "as_tensor", "arange", "zeros", "ones", "full", "linspace", "eye"}
++)
++# How many times a graph is taken down again because a tensor it read in
++# place lay somewhere else, before its calls run what was compiled as it is.
++_RECORDS = 6
++
++
++# A graph that was started ahead for nothing is started ahead again once
++# this many calls in a row have run it: twice as many with each time it was
++# for nothing, up to _WAIT, and half as many again with every _SURE calls in
++# a row that it was started ahead for.
++_WAIT = 32
++_SURE = 64
++# From how many bytes on a tensor that a graph gives is handed out without
++# a copy, and copied only if it is still held when the graph runs again.
++_LARGE = 1 << 20
++
++
++def _numbers(value: Any) -> bool:
++    if isinstance(value, (list, tuple)):
++        return all(_numbers(item) for item in value)
++    return not isinstance(value, (torch.fx.Node, torch.Tensor))
++
++
++def unfit(gm: torch.fx.GraphModule) -> str:
++    """Why the graph a pass was given cannot run as a CUDA graph, as far as
++    its nodes say; empty if nothing stands against it. A tensor that the
++    graph computes on the processor is computed once, when the kernels are
++    taken down: that is right only for one made from numbers."""
++    for node in gm.graph.nodes:
++        if node.op not in ("call_function", "call_method"):
++            continue
++        tags = getattr(node.target, "tags", ())
++        if torch.Tag.dynamic_output_shape in tags or torch.Tag.data_dependent_output in tags:
++            return f"{node.target} looks into a tensor"
++        found = node.meta.get(_types._TYPE)
++        if found is None or found.device.type == "cuda":
++            continue
++        name = getattr(node.target, "__name__", "")
++        constant = _numbers(node.args) and _numbers(tuple(node.kwargs.values()))
++        if not (constant and name in _FROM_NUMBERS):
++            return f"{node.name} is computed on {found.device}"
++    return ""
++
++
++def channels_last_weights(
++    gm: torch.fx.GraphModule, examples: list[torch.Tensor], keep: bool
++) -> tuple[torch.fx.GraphModule, list[tuple[int, bool]]] | None:
++    """A copy of the graph in which the convolutions take their weights from
++    further inputs, behind those of the graph: per weight one that is laid
++    out channels last. Returns it with, per such input, the input it is the
++    weight of and whether it is a view of it (a 1x1 weight) or a copy that
++    is kept (the others, only with ``keep``). None if the graph is not one
++    of plain 2-d convolutions whose weights are inputs, laid out densely:
++    what Inductor lays out channels last by itself."""
++    placeholders = [node for node in gm.graph.nodes if node.op == "placeholder"]
++    index = {node: k for k, node in enumerate(placeholders)}
++    convolutions = (torch.ops.aten.conv2d.default, torch.conv2d)
++    found = []
++    for node in gm.graph.nodes:
++        if node.op != "call_function" or node.target not in convolutions:
++            continue
++        weight = node.args[1] if len(node.args) > 1 else node.kwargs.get("weight")
++        groups = node.args[6] if len(node.args) > 6 else node.kwargs.get("groups", 1)
++        if not isinstance(weight, torch.fx.Node) or weight not in index or groups != 1:
++            return None
++        example = examples[index[weight]]
++        if example.dim() != 4 or not example.is_contiguous() or not example.is_cuda:
++            return None
++        found.append((node, weight))
++    wanted: dict[torch.fx.Node, bool] = {}
++    for _, weight in found:
++        single = tuple(examples[index[weight]].shape[2:]) == (1, 1)
++        if single or keep:
++            wanted[weight] = single
++    if not wanted:
++        return None
++    made = torch.fx.GraphModule(gm, _copy.deepcopy(gm.graph))
++    nodes = {node.name: node for node in made.graph.nodes}
++    last = [node for node in made.graph.nodes if node.op == "placeholder"][-1]
++    extra: list[tuple[int, bool]] = []
++    for weight, single in wanted.items():
++        with made.graph.inserting_after(last):
++            last = made.graph.placeholder(weight.name + "_channels_last")
++        extra.append((index[weight], single))
++        for node, taken in found:
++            if taken is not weight:
++                continue
++            copy = nodes[node.name]
++            if len(copy.args) > 1:
++                copy.args = (copy.args[0], last, *copy.args[2:])
++            else:
++                copy.kwargs = {**copy.kwargs, "weight": last}
++    made.recompile()
++    return made, extra
++
++
++def laid_out(tensor: torch.Tensor, view: bool) -> torch.Tensor:
++    """A weight laid out channels last: a view of it for one over single
++    elements, where the two layouts are the same memory, else a copy."""
++    if view:
++        out, into = tensor.shape[0], tensor.shape[1]
++        return tensor.detach().as_strided(tensor.shape, (into, 1, into, into))
++    return torch.empty_like(tensor, memory_format=torch.channels_last).copy_(tensor)
++
++
++def draws(gm: torch.fx.GraphModule) -> bool:
++    """Whether a node of the graph may draw random numbers."""
++    words = ("rand", "dropout", "bernoulli", "multinomial", "normal", "poisson")
++    words += ("uniform", "exponential", "geometric", "cauchy", "rrelu", "shuffle")
++    for node in gm.graph.nodes:
++        if node.op not in ("call_function", "call_method"):
++            continue
++        if torch.Tag.nondeterministic_seeded in getattr(node.target, "tags", ()):
++            return True
++        name = node.target if isinstance(node.target, str) else getattr(node.target, "__name__", "")
++        if any(word in name.lower() for word in words):
++            return True
++    return False
++
++
++class Replayed:
++    """``compiled`` (what a pass made of a graph: called with the tensors of
++    the graph, it returns a tuple of the values the graph gives), run as a
++    CUDA graph where that is right. ``off`` says why it is not, once that is
++    known."""
++
++    def __init__(
++        self,
++        compiled: Callable[..., Any],
++        off: str = "",
++        early: bool = True,
++        extra: list[tuple[int, bool]] | None = None,
++        hand_out: bool = False,
++    ) -> None:
++        # Whether large results are handed out without a copy.
++        self.hand_out = hand_out
++        # What was compiled takes, behind the tensors of the graph, the
++        # weights of ``extra`` laid out channels last (`channels_last_weights`).
++        self.inner = compiled
++        self.extra = tuple(extra or ())
++        # Those weights as they are handed on, the tensors they were made
++        # of, and for the copies the version counters of those then.
++        self.made: list[torch.Tensor] | None = None
++        self.sources: list[torch.Tensor] = []
++        self.versions: list[int] = []
++        self.off = off
++        # Whether it may be started in front of the checks of a call.
++        self.early = early
++        # The thread that started it ahead, with the tensors it copied: that
++        # thread has the lock until its call comes, or does not.
++        self.flying: tuple[int, list[Any]] | None = None
++        # How many calls in a row ran the graph, and how many have to
++        # before it is started ahead.
++        self.streak = 0
++        self.needed = 0
++        # Times it was started ahead, for a call that came, and for nothing.
++        # And: tensors handed out that were copied later, and calls that
++        # found a view of one alive.
++        self.counts = [0, 0, 0, 0, 0]
++        # The tensors that are read in place, and those that the last call
++        # copied.
++        self.held: list[torch.Tensor] = []
++        self.places: Any = b""
++        self.last: dict[int, torch.Tensor] = {}
++        self.lock = threading.Lock()
++        self.graph: Any = None
++        self.records = 0
++        # Where the tensors lay in the call before the graph was taken down.
++        self.seen: tuple[int, ...] | None = None
++        # The tensors that are copied, once the graph was first taken down;
++        # and how many times each of the others was found somewhere else.
++        self.copied: set[int] | None = None
++        self.moves: dict[int, int] = {}
++        # Of the graph that was taken down: the tensors it reads in place and
++        # where they lie, the places of its own with the tensor each is
++        # copied from, and what it gives.
++        self.fixed: tuple[int, ...] = ()
++        self.where: tuple[int, ...] = ()
++        self.buffers: list[tuple[torch.Tensor, int]] = []
++        self.given: tuple[Any, ...] = ()
++        self.tensors: tuple[int, ...] = ()
++        # Of what it gives, what is handed out without a copy: which, how
++        # many references the memory of each has by itself, and the tensors
++        # the last run handed out.
++        self.large: tuple[int, ...] = ()
++        self.alone: list[int] = []
++        self.handed: list[torch.Tensor | None] = []
++        self.device = -1
++        self.said = False
++
++    def compiled(self, *args: Any) -> Any:
++        """What was compiled, called with the tensors of the graph."""
++        if not self.extra:
++            return self.inner(*args)
++        return self.inner(*args, *self._laid_out(args))
++
++    def _laid_out(self, args: tuple[Any, ...]) -> list[torch.Tensor]:
++        """The weights laid out channels last, for these tensors: the copies
++        that are kept, written again where a weight is another tensor or was
++        written to since."""
++        if self.made is None:
++            self.made = [laid_out(args[k], view) for k, view in self.extra]
++            self.sources = [args[k] for k, _ in self.extra]
++            self.versions = [tensor._version for tensor in self.sources]
++            return self.made
++        made = self.made
++        for j, (k, view) in enumerate(self.extra):
++            tensor = args[k]
++            if tensor is self.sources[j] and (view or tensor._version == self.versions[j]):
++                continue
++            if view:
++                made[j] = laid_out(tensor, True)
++            else:
++                made[j].copy_(tensor)
++            self.sources[j] = tensor
++            self.versions[j] = tensor._version
++        return made
++
++    def _apart(self, args: tuple[Any, ...]) -> Any:
++        """What was compiled, called without anything that is kept: for a
++        thread that finds another one in the graph."""
++        return self.inner(*args, *[laid_out(args[k], view) for k, view in self.extra])
++
++    def _same(self, args: tuple[Any, ...]) -> bool:
++        """Whether the weights are the tensors that what is kept was made of."""
++        for (k, _), source in zip(self.extra, self.sources):
++            if args[k] is not source:
++                return False
++        return True
++
++    def _current(self) -> bool:
++        """Whether what is kept of the weights is what they hold, as far as
++        their version counters say."""
++        for j, (_, view) in enumerate(self.extra):
++            if not view and self.sources[j]._version != self.versions[j]:
++                return False
++        return True
++
++    def ahead(self, *known: Any) -> bool:
++        """Starts the graph for a call that is likely to come: with the
++        tensors that are known in front of its checks (None for the others),
++        if those are all it copies. True if it did; the call, or ``missed``,
++        then has to follow on this thread."""
++        if self.graph is None or not self.early:
++            return False
++        if self.streak < self.needed:
++            return False
++        if not self.lock.acquire(False):
++            return False
++        try:
++            fits = (
++                torch.cuda.current_device() == self.device
++                # What is read in place is still there.
++                and _lie_at(self.held, self.places)
++                and self._current()
++            )
++            copied = []
++            for buffer, k in self.buffers if fits else ():
++                # One that is not known yet (a weight that is copied): the
++                # tensor of the call before, which the call then has to
++                # find to be the one it is given.
++                tensor = known[k] if known[k] is not None else self.last.get(k)
++                fits = (
++                    type(tensor) in (torch.Tensor, torch.nn.Parameter)
++                    and tensor.shape == buffer.shape
++                    and tensor.dtype == buffer.dtype
++                    and tensor.device == buffer.device
++                    and tensor.layout is torch.strided
++                    and not (tensor.requires_grad and torch.is_grad_enabled())
++                )
++                if not fits:
++                    break
++                copied.append(tensor)
++            fits = fits and self._settle()
++            if fits:
++                for (buffer, _), tensor in zip(self.buffers, copied):
++                    buffer.copy_(tensor)
++                self.graph.replay()
++                self.flying = (threading.get_ident(), copied)
++                self.counts[0] += 1
++        except BaseException:
++            self.lock.release()
++            raise
++        if not fits:
++            self.lock.release()
++        return fits
++
++    def missed(self) -> None:
++        """The call that the graph was started ahead for does not come."""
++        flying = self.flying
++        if flying is not None and flying[0] == threading.get_ident():
++            self.flying = None
++            self._for_nothing()
++            self.lock.release()
++
++    def _for_nothing(self) -> None:
++        self.counts[2] += 1
++        self.streak = 0
++        self.needed = min(max(2 * self.needed, 2), _WAIT)
++
++    def __call__(self, *args: Any) -> Any:
++        flying = self.flying
++        if flying is not None and flying[0] == threading.get_ident():
++            # Started ahead by this thread, which has the lock.
++            self.flying = None
++            try:
++                at = tuple([_PTR(args[k]) for k in self.fixed])
++                same = all(args[k] is tensor for (_, k), tensor in zip(self.buffers, flying[1]))
++                if at == self.where and same and self.graph is not None and self._same(args):
++                    self.counts[1] += 1
++                    self.streak += 1
++                    if self.needed and self.streak >= self.needed + _SURE:
++                        self.needed //= 2
++                        self.streak = self.needed
++                    return self._fresh()
++                self._for_nothing()
++                return self._run(args)
++            finally:
++                self.lock.release()
++        if not self.lock.acquire(False):
++            # Another thread is in the graph: its memory is in use.
++            return self._apart(args)
++        try:
++            return self._run(args)
++        finally:
++            self.lock.release()
++
++    def _run(self, args: tuple[Any, ...]) -> Any:
++        if True:
++            if self.graph is not None:
++                at = tuple([_PTR(args[k]) for k in self.fixed])
++                if at == self.where and torch.cuda.current_device() == self.device:
++                    if not self._settle():
++                        self.streak = 0
++                        return self.compiled(*args)
++                    for buffer, k in self.buffers:
++                        buffer.copy_(args[k])
++                        self.last[k] = args[k]
++                    if self.extra:
++                        self._laid_out(args)
++                    self.graph.replay()
++                    self.streak += 1
++                    return self._fresh()
++            self.streak = 0
++            return self._slow(args)
++
++    def _fresh(self) -> tuple[Any, ...]:
++        given = list(self.given)
++        for k in self.tensors:
++            given[k] = given[k].clone()
++        for j, k in enumerate(self.large):
++            # A tensor of its own on the memory of the graph.
++            kept = given[k]
++            empty = torch.empty(0, dtype=kept.dtype, device=kept.device)
++            handed = empty.set_(kept.untyped_storage(), 0, kept.shape, kept.stride())
++            self.handed[j] = given[k] = handed
++        return tuple(given)
++
++    def _settle(self) -> bool:
++        """Before the graph writes its memory again: what the last run
++        handed out without a copy and somebody still has is given memory of
++        its own. False if that cannot be done, because a view of it (or
++        another tensor on its memory) is alive: the graph must not run."""
++        for j in range(len(self.handed)):
++            # No enumerate: it keeps what it gave last.
++            handed = self.handed[j]
++            if handed is None:
++                continue
++            kept = self.given[self.large[j]]
++            # The memory: the tensor of the graph, the one handed out, and
++            # whatever else is on it.
++            if torch._C._storage_Use_Count(kept.untyped_storage()._cdata) > self.alone[j] + 1:
++                self.counts[4] += 1
++                return False
++            # The tensor: this list, this variable, the argument of the count.
++            if sys.getrefcount(handed) > 3 or handed._use_count() > 1:
++                own = handed.clone()
++                handed.set_(own.untyped_storage(), 0, own.shape, own.stride())
++                self.counts[3] += 1
++            self.handed[j] = None
++        return True
++
++    def _drop(self) -> None:
++        self.graph = None
++        self.buffers = []
++        self.given = ()
++        # What was handed out keeps the memory it has: nothing writes it.
++        self.large, self.alone, self.handed = (), [], []
++        self.held = []
++        self.last = {}
++        # A weight that lies somewhere else may hold something else under
++        # the same version counter.
++        self.made = None
++
++    def _slow(self, args: tuple[Any, ...]) -> Any:
++        given = self._slower(args)
++        if self.off and not self.said and os.environ.get("TORCH_VM_GRAPH_DEBUG"):
++            self.said = True
++            print(f"torch.vm graph: no CUDA graph: {self.off}", file=sys.stderr)
++        return given
++
++    def _slower(self, args: tuple[Any, ...]) -> Any:
++        if self.off:
++            return self.compiled(*args)
++        if self.graph is not None:
++            if torch.cuda.current_device() != self.device:
++                return self.compiled(*args)
++            # A tensor that was read where it lay is somewhere else: once,
++            # it is read where it lies now.
++            assert self.copied is not None
++            for k, at in zip(self.fixed, self.where):
++                if _PTR(args[k]) != at:
++                    self.moves[k] = self.moves.get(k, 0) + 1
++                    if self.moves[k] > 1:
++                        self.copied.add(k)
++            self._drop()
++            if self.records >= _RECORDS:
++                self.off = "the tensors it is given lie somewhere else every time"
++                return self.compiled(*args)
++            return self._record(args)
++        if self.seen is None:
++            self.off = self._unfit(args)
++            if self.off:
++                return self.compiled(*args)
++            # The first call loads the kernels and has cuDNN choose, and
++            # shows whether the graph writes to what it is given.
++            versions = [tensor._version for tensor in args]
++            given = self.compiled(*args)
++            if versions != [tensor._version for tensor in args]:
++                self.off = "it writes to a tensor it is given"
++            self.seen = tuple(map(_PTR, args))
++            return given
++        return self._record(args)
++
++    def _unfit(self, args: tuple[Any, ...]) -> str:
++        if not args:
++            return "it is given no tensor"
++        storages = set()
++        device = torch.cuda.current_device() if torch.cuda.is_available() else -1
++        recorded = torch.is_grad_enabled()
++        for tensor in args:
++            if type(tensor) not in (torch.Tensor, torch.nn.Parameter):
++                return "it is given what is no plain tensor"
++            if not tensor.is_cuda or tensor.device.index != device:
++                return "a tensor it is given is not on the current GPU"
++            if tensor.layout is not torch.strided or tensor.is_conj() or tensor.is_neg():
++                return "a tensor it is given is not dense"
++            if tensor.is_inference():
++                return "a tensor it is given is of inference mode"
++            if recorded and tensor.requires_grad:
++                return "gradients are recorded"
++            storages.add(tensor.untyped_storage()._cdata)
++        if len(storages) != len(args):
++            return "two tensors it is given share memory"
++        return ""
++
++    def _record(self, args: tuple[Any, ...]) -> Any:
++        assert self.seen is not None
++        at = tuple(map(_PTR, args))
++        if self.copied is None:
++            # What did not lie where it lay in the call before.
++            self.copied = {k for k in range(len(args)) if at[k] != self.seen[k]}
++        fixed = [k for k in range(len(args)) if k not in self.copied]
++        feed = list(args)
++        buffers = []
++        for k in sorted(set(range(len(args))) - set(fixed)):
++            buffer = torch.empty_like(args[k])
++            if buffer.stride() != args[k].stride():
++                self.off = "a tensor it is given is not laid out densely"
++                return self.compiled(*args)
++            buffers.append((buffer, k))
++            feed[k] = buffer
++        self.records += 1
++        # The weights laid out channels last: of a weight that is copied in,
++        # a view is one of the place it is copied to.
++        made = self._laid_out(args) if self.extra else []
++        more = [
++            laid_out(feed[k], True) if view and feed[k] is not args[k] else made[j]
++            for j, (k, view) in enumerate(self.extra)
++        ]
++        try:
++            graph = torch.cuda.CUDAGraph()
++            with torch.cuda.graph(graph, capture_error_mode="thread_local"):
++                given = self.inner(*feed, *more)
++        except Exception as e:
++            self.off = f"its kernels cannot be taken down: {type(e).__name__}: {e}"[:200]
++            return self.compiled(*args)
++        self.off = self._unfit_results(given, feed + [one for one, (_, view) in zip(more, self.extra) if not view])
++        if self.off:
++            del graph
++            return self.compiled(*args)
++        self.graph = graph
++        self.held = [args[k] for k in fixed]
++        self.places = _places(self.held)
++        self.fixed = tuple(fixed)
++        self.where = tuple(at[k] for k in fixed)
++        self.buffers = buffers
++        self.given = tuple(given)
++        tensors = [k for k, value in enumerate(given) if isinstance(value, torch.Tensor)]
++        large = [
++            k
++            for k in tensors
++            if self.hand_out and given[k].is_cuda and given[k].numel() * given[k].element_size() >= _LARGE
++        ]
++        self.tensors = tuple(k for k in tensors if k not in large)
++        self.large = tuple(large)
++        self.alone = [torch._C._storage_Use_Count(given[k].untyped_storage()._cdata) for k in large]
++        self.handed = [None] * len(large)
++        self.device = torch.cuda.current_device()
++        # Nothing ran while the kernels were taken down.
++        for buffer, k in buffers:
++            buffer.copy_(args[k])
++            self.last[k] = args[k]
++        graph.replay()
++        return self._fresh()
++
++    def _unfit_results(self, given: Any, feed: list[torch.Tensor]) -> str:
++        if not isinstance(given, (tuple, list)):
++            return "it gives no tuple"
++        taken = {tensor.untyped_storage()._cdata for tensor in feed}
++        for value in given:
++            if isinstance(value, torch.Tensor):
++                if type(value) is not torch.Tensor or value.layout is not torch.strided:
++                    return "it gives what is no plain tensor"
++                if value.requires_grad:
++                    return "a tensor it gives requires a gradient"
++                storage = value.untyped_storage()._cdata
++                if storage in taken:
++                    return "two of the tensors it is given and gives share memory"
++                taken.add(storage)
++                # A copy has to be laid out as the tensor is.
++                if value.storage_offset() != 0 or not (
++                    value.is_contiguous()
++                    or (value.dim() == 4 and value.is_contiguous(memory_format=torch.channels_last))
++                    or (value.dim() == 5 and value.is_contiguous(memory_format=torch.channels_last_3d))
++                ):
++                    return "a tensor it gives is not laid out densely"
++            elif not (value is None or type(value) in (int, float, bool, str)):
++                return f"it gives a {type(value).__name__}"
++        return ""
+diff --git a/torch/vm/passes.py b/torch/vm/passes.py
+index 437112e..1eef8c9 100644
+--- a/torch/vm/passes.py
++++ b/torch/vm/passes.py
+@@ -25,6 +25,7 @@ __all__ = [
+     "ModuleShortcuts",
+     "NarrowDims",
+     "ResolveDispatch",
++    "SplitPools",
+     "TensorAccessors",
+     "Unroll",
+ ]
+@@ -174,6 +175,71 @@ class Graphs(BuiltinPass):
+                 raise ValueError(f"Graphs({name}={given}): at least {least}")
+ 
+ 
++@dataclasses.dataclass(frozen=True, repr=False)
++class SplitPools(BuiltinPass):
++    """A pass over a graph: a max pool over a window of ``min_window``
++    elements or more becomes two, one along each dimension of the window.
++
++    The largest value of a window is the largest of the largest values of
++    its rows, so the result is the same, bit for bit, padding, stride and
++    dilation included; a compiler that reads a whole window per element
++    reads ``k + k`` values for it instead of ``k * k``. It looks at calls of
++    ``torch.max_pool2d`` that do not round sizes up (``ceil_mode``). It
++    stands between :class:`Graphs` and the pass that compiles.
++    """
++
++    engine: ClassVar[str] = "split_pools"
++    kind: ClassVar[str] = "graph"
++
++    min_window: int = 16
++
++    def __call__(self, gm: Any, input_types: list[Any]) -> Any:
++        import torch
++
++        def pair(value: Any) -> Any:
++            if isinstance(value, int) and not isinstance(value, bool):
++                return (value, value)
++            fits = isinstance(value, (tuple, list)) and all(type(n) is int for n in value)
++            if fits and len(value) == 1:
++                return (value[0], value[0])
++            return tuple(value) if fits and len(value) == 2 else None
++
++        pools = (torch.max_pool2d, torch.ops.aten.max_pool2d.default)
++        names = ("input", "kernel_size", "stride", "padding", "dilation", "ceil_mode")
++        for node in list(gm.graph.nodes):
++            if node.op != "call_function" or node.target not in pools:
++                continue
++            given = dict(zip(names, node.args))
++            if len(node.args) > len(names) or set(node.kwargs) - set(names) or set(node.kwargs) & set(given):
++                continue
++            given.update(node.kwargs)
++            if "input" not in given or "kernel_size" not in given or given.get("ceil_mode", False) is not False:
++                continue
++            window = pair(given["kernel_size"])
++            stride = given.get("stride")
++            # Without a stride the window moves on by its own size.
++            stride = window if stride is None or stride == [] or stride == () else pair(stride)
++            padding, dilation = pair(given.get("padding", 0)), pair(given.get("dilation", 1))
++            if None in (window, stride, padding, dilation):
++                continue
++            if window[0] < 2 or window[1] < 2 or window[0] * window[1] < self.min_window:
++                continue
++            with gm.graph.inserting_before(node):
++                across = gm.graph.call_function(
++                    node.target,
++                    (given["input"], (1, window[1]), (1, stride[1]), (0, padding[1]), (1, dilation[1]), False),
++                )
++                down = gm.graph.call_function(
++                    node.target,
++                    (across, (window[0], 1), (stride[0], 1), (padding[0], 0), (dilation[0], 1), False),
++                )
++            across.meta, down.meta = {}, dict(node.meta)
++            node.replace_all_uses_with(down)
++            gm.graph.erase_node(node)
++        gm.recompile()
++        return gm
++
++
+ @dataclasses.dataclass(frozen=True, repr=False)
+ class AOTAutograd(BuiltinPass):
+     """A pass over a graph: AOTAutograd traces the graph and its backward ahead
+@@ -226,6 +292,32 @@ class Inductor(BuiltinPass):
+     was exported on. A pass that compiles is the last pass over a graph in
+     the list, and there is one at most. ``torch._inductor`` is imported when
+     the pass first runs.
++
++    Args:
++        cuda_graphs: run what was compiled for a graph on a GPU as one CUDA
++            graph: its kernels are taken down once and then started
++            together, without the time the processor takes between two of
++            them. The tensors that stay where they are from call to call
++            (the weights of a model) are read in place, the others are
++            copied in, and what the graph gives is copied out. For calls
++            under ``torch.no_grad()`` of a graph that does not write to
++            what it is given; the others run what was compiled as it is.
++        weight_layout: with ``cuda_graphs``, for a graph of plain 2-d
++            convolutions: ``"view"`` hands the weights of 1x1 convolutions
++            to what was compiled as views laid out channels last, which is
++            the same memory, so that they are not copied into that layout
++            on every call. ``"keep"`` also keeps a channels-last copy of
++            the other weights and makes it again when a weight is another
++            tensor or its version counter has moved. That follows what
++            autograd sees of a write; a write through ``weight.data``, or
++            by another library, moves no counter and is **not followed**.
++        hand_out: with ``cuda_graphs``, a result of 1 MB or more is handed
++            out without a copy, on the memory of the graph, and gets memory
++            of its own when the graph is about to run again and the tensor
++            is still held; while a view of one is alive the graph does not
++            run. Who keeps the *address* of such a result across calls (a
++            DLPack capsule, ``__cuda_array_interface__``) is **not seen**:
++            the next call writes that memory.
+     """
+ 
+     engine: ClassVar[str] = "inductor"
+@@ -234,12 +326,47 @@ class Inductor(BuiltinPass):
+     exact: ClassVar[bool] = False
+     compiles: ClassVar[bool] = True
+ 
++    cuda_graphs: bool = False
++    weight_layout: str = ""
++    hand_out: bool = False
++
++    def __post_init__(self) -> None:
++        if self.hand_out and not self.cuda_graphs:
++            raise ValueError("Inductor(hand_out=True) is for cuda_graphs=True")
++        if self.weight_layout not in ("", "view", "keep"):
++            raise ValueError(
++                f"Inductor(weight_layout={self.weight_layout!r}): '' (the weights as they are), "
++                "'view' or 'keep'"
++            )
++        if self.weight_layout and not self.cuda_graphs:
++            raise ValueError("Inductor(weight_layout=...) is for cuda_graphs=True")
++
+     def __call__(self, gm: Any, input_types: list[Any]) -> Any:
++        import torch
+         import torch._inductor
+ 
+         from . import _export
+ 
+-        compiled = torch._inductor.compile(gm, _export.examples(input_types))
++        examples = _export.examples(input_types)
++        if not (self.cuda_graphs and any(tensor.is_cuda for tensor in examples)):
++            return _export.calling(gm, torch._inductor.compile(gm, examples))
++        from . import _cudagraphs
++
++        found = None
++        recorded = torch.is_grad_enabled() and any(tensor.requires_grad for tensor in examples)
++        if self.weight_layout and not recorded:
++            keep = self.weight_layout == "keep"
++            found = _cudagraphs.channels_last_weights(gm, examples, keep)
++        if found is None:
++            compiled, extra = torch._inductor.compile(gm, examples), None
++        else:
++            # The convolutions are laid out channels last, as their weights are.
++            graph, extra = found
++            more = [_cudagraphs.laid_out(examples[k], view) for k, view in extra]
++            options = {"force_layout_optimization": True}
++            compiled = torch._inductor.compile(graph, examples + more, options=options)
++        early = not _cudagraphs.draws(gm)
++        compiled = _cudagraphs.Replayed(compiled, _cudagraphs.unfit(gm), early, extra, self.hand_out)
+         return _export.calling(gm, compiled)
+ 
+ 

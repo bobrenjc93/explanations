@@ -1,0 +1,15 @@
+{
+ "label": "tc #5: 2992 img/s: checked config + SPP max pool passes unrolled (0.07->0.014 ms), automatic_dynamic_shapes=False instead of dynamic=False",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_05",
+ "config": "/home/dev/local/hill2/acc/trees/tc_05/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.05202476483392059,
+   "eager_moved_by": 0.9369532532248956,
+   "off_by": 0.053129706395802036,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

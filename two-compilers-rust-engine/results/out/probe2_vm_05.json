@@ -1,0 +1,15 @@
+{
+ "label": "vm #5: 3338 img/s: Inductor(weight_layout=\"keep\"): channels-last copies of the 3x3 conv weights are kept, remade when a weight is another tensor or its version counter moved. GIVES UP: a write through weight.data (moves no counter) is not followed; in-place ops, copy_, views, detach, replaced or moved weights are. Engine: a longer path is tried again (hook removed)",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_05",
+ "config": "/home/dev/local/hill2/acc/trees/vm_05/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.05215980484910535,
+   "eager_moved_by": 0.9377136243966936,
+   "off_by": 0.0,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

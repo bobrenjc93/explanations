@@ -1,0 +1,57 @@
+{
+ "label": "vm #0: 1825 img/s: start: the dashboard's configuration",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_00",
+ "config": "/home/dev/local/hill2/acc/trees/vm_00/hill_config.py",
+ "rmse_against_eager_before": 0.05252299714495624,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.934864431863241,
+   "off_by": 0.09057227482421337,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5971421348847494,
+   "off_by": 0.05205358200394679,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5916522829660761,
+   "off_by": 0.05046861590666472,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8803225815341481,
+   "off_by": 0.050667472485955094,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.05339548840611149,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.934864431863241,
+   "off_by": 0.09057227482421337,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

@@ -1,0 +1,15 @@
+{
+ "label": "vm #1: 2405 img/s: Inductor(cuda_graphs=True): what Inductor compiled runs as one CUDA graph (weights read in place, input copied in, outputs copied out)",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_01",
+ "config": "/home/dev/local/hill2/acc/trees/vm_01/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.052620258860819044,
+   "eager_moved_by": 0.9369532532248956,
+   "off_by": 0.034897544181017995,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

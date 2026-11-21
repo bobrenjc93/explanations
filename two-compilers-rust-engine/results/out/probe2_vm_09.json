@@ -1,0 +1,15 @@
+{
+ "label": "vm #9: 3146 img/s: safe configuration, same source: Inductor(cuda_graphs=True) with SplitPools; weight_layout and hand_out off: results copied, weights laid out on every call; follows every write I know of",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_09",
+ "config": "/home/dev/local/hill2/acc/trees/vm_09/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.05148399732254151,
+   "eager_moved_by": 0.9377136243966936,
+   "off_by": 0.0,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

@@ -1,0 +1,96 @@
+{
+ "label": "tc #4: 3327 img/s: UNCHECKED variant: freezing + install_free_tensors + keep_tensor_guards_unsafe, no output copies: in-place weight updates, module attribute edits, train(), replaced params are NOT followed; outputs are overwritten by the next call",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_04",
+ "config": "/home/dev/local/hill2/acc/trees/tc_04/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7584289489271823,
+  "precision": 0.5575016433688431,
+  "recall": 0.7904202838529107
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7535909556131188,
+  "precision": 0.5552468920035771,
+  "recall": 0.7900435932542277
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7523154565566286,
+  "precision": 0.5522451402221284,
+  "recall": 0.7855498377331629
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 718,
+   "found": 710,
+   "missing": 8,
+   "extra": 4,
+   "largest_score_difference": 0.024200439453125,
+   "largest_box_shift_px": 10.662933349609375
+  },
+  "detections_iou_0.5": {
+   "detections": 718,
+   "found": 711,
+   "missing": 7,
+   "extra": 3,
+   "largest_score_difference": 0.024200439453125,
+   "largest_box_shift_px": 10.662933349609375
+  },
+  "raw_output": {
+   "rmse": 0.0745706321091639,
+   "largest": 30.0,
+   "rms_of_reference": 41.32632339950609
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 588,
+   "missing": 139,
+   "extra": 126,
+   "largest_score_difference": 0.046704769134521484,
+   "largest_box_shift_px": 10.5574951171875
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 709,
+   "missing": 18,
+   "extra": 5,
+   "largest_score_difference": 0.046704769134521484,
+   "largest_box_shift_px": 16.567901611328125
+  },
+  "raw_output": {
+   "rmse": 0.09218649884246524,
+   "largest": 17.25299835205078,
+   "rms_of_reference": 41.32714066366931
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 589,
+   "missing": 138,
+   "extra": 129,
+   "largest_score_difference": 0.040723323822021484,
+   "largest_box_shift_px": 5.3227081298828125
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 712,
+   "missing": 15,
+   "extra": 6,
+   "largest_score_difference": 0.040723323822021484,
+   "largest_box_shift_px": 16.96533203125
+  },
+  "raw_output": {
+   "rmse": 0.10138229497286025,
+   "largest": 23.75299835205078,
+   "rms_of_reference": 41.32714066366931
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.327319722132636
+ },
+ "ms_per_batch_with_copy_out": 25.19014256540686
+}

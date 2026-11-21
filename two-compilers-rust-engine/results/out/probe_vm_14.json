@@ -1,0 +1,57 @@
+{
+ "label": "vm #14: 3159 img/s: safe configuration + torch._inductor.config.max_autotune_pointwise=True (config only): Inductor(cuda_graphs=True) with SplitPools, weight_layout and hand_out off",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_14",
+ "config": "/home/dev/local/hill2/acc/trees/vm_14/hill_config.py",
+ "rmse_against_eager_before": 0.05225084745959204,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.934864431863241,
+   "off_by": 0.09049141904949608,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5971421348847494,
+   "off_by": 0.052585227259024245,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5916522829660761,
+   "off_by": 0.05074063625973288,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8803225815341481,
+   "off_by": 0.05046044054707197,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.053436080444423203,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.934864431863241,
+   "off_by": 0.09049141904949608,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

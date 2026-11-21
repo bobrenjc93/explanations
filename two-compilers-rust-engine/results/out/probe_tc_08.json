@@ -1,0 +1,57 @@
+{
+ "label": "tc #8: 2966 img/s: checked config + first conv's RGB input padded to 4 channels in Inductor's conv lowering (cuDNN NHWC bf16: 0.101 -> 0.079 ms)",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_08",
+ "config": "/home/dev/local/hill2/acc/trees/tc_08/hill_config.py",
+ "rmse_against_eager_before": 0.05209044418961287,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.09104294293784486,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5940015153988939,
+   "off_by": 0.052213016750190404,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5923968550007377,
+   "off_by": 0.05016627660149931,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8794924338209396,
+   "off_by": 0.05075945790607758,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.05850362728872807,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.04639712291497575,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.05413848139844164,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.09104294293784486,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

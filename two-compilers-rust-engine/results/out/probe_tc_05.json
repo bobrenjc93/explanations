@@ -1,0 +1,57 @@
+{
+ "label": "tc #5: 2992 img/s: checked config + SPP max pool passes unrolled (0.07->0.014 ms), automatic_dynamic_shapes=False instead of dynamic=False",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_05",
+ "config": "/home/dev/local/hill2/acc/trees/tc_05/hill_config.py",
+ "rmse_against_eager_before": 0.051621829914193916,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.08984612022981414,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5958387264579161,
+   "off_by": 0.050895536451952515,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5919920970577557,
+   "off_by": 0.050125641441201185,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8798518278453805,
+   "off_by": 0.051076517101684114,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.05884685459955011,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.046046672946002454,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.05334379947882679,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.08984612022981414,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

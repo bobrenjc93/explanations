@@ -1,0 +1,15 @@
+{
+ "label": "vm #20: 3158 img/s: safe configuration, final sample (final source, final config.py)",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_20",
+ "config": "/home/dev/local/hill2/acc/trees/vm_20/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.05172148636070844,
+   "eager_moved_by": 0.9377136243966936,
+   "off_by": 0.0,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

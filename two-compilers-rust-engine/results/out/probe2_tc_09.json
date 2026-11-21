@@ -1,0 +1,15 @@
+{
+ "label": "tc #9: 3046 img/s: checked config + filter count of half-precision NHWC convs rounded up to a multiple of 8 with zero filters (255-channel YOLO heads: cuDNN 55/30/22 us -> 9/5/4 us)",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_09",
+ "config": "/home/dev/local/hill2/acc/trees/tc_09/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.052182620473038684,
+   "eager_moved_by": 0.9377941110288976,
+   "off_by": 0.05269697876666289,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

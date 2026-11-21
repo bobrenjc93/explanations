@@ -1,0 +1,15 @@
+{
+ "label": "tc #0: 1954 img/s: start: the dashboard's configuration",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_00",
+ "config": "/home/dev/local/hill2/acc/trees/tc_00/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.0511656919860598,
+   "eager_moved_by": 0.937263332390854,
+   "off_by": 0.05241922901765342,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

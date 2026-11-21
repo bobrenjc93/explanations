@@ -1,0 +1,20 @@
+{
+ "label": "vm #6: 3147 img/s: same source with weight_layout off: every write to a weight is followed (the safe configuration); tests added for SplitPools, values kept by a form, the order of paths, CUDA graphs",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_06",
+ "config": "/home/dev/local/hill2/acc/trees/vm_06/hill_config.py",
+ "probes": {
+  "a 3x3 convolution's weight halved through .data": {
+   "module": "3x3 convolution 19 of 38",
+   "eager_moved_by": 0.5574597633515603,
+   "off_by": 0.04993699374577725,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a result kept as a tensor across two more calls": {
+   "followed": true
+  },
+  "a result kept through DLPack across two more calls": {
+   "followed": true
+  }
+ }
+}

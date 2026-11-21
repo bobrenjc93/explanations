@@ -1,0 +1,57 @@
+{
+ "label": "vm #6: 3147 img/s: same source with weight_layout off: every write to a weight is followed (the safe configuration); tests added for SplitPools, values kept by a form, the order of paths, CUDA graphs",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_06",
+ "config": "/home/dev/local/hill2/acc/trees/vm_06/hill_config.py",
+ "rmse_against_eager_before": 0.05202476483392059,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935180628307474,
+   "off_by": 0.0905976782239074,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.595162930162821,
+   "off_by": 0.05171517399228841,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5921041090297542,
+   "off_by": 0.05000131235131327,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8792652717588705,
+   "off_by": 0.05083015625056383,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.0,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.053885160893538245,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935180628307474,
+   "off_by": 0.0905976782239074,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

@@ -1,0 +1,15 @@
+{
+ "label": "vm #4: 3218 img/s: engine: values read behind the graph that are fixed per form (p.shape, p.device) are kept by the form, so the detection convs are no outputs (no NCHW copies, fewer clones); warnings shown while profiling no longer split the graph; moved weights are re-read in place",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_04",
+ "config": "/home/dev/local/hill2/acc/trees/vm_04/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.05241046055254647,
+   "eager_moved_by": 0.9369532532248956,
+   "off_by": 0.0,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

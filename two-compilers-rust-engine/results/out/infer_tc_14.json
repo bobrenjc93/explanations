@@ -1,0 +1,96 @@
+{
+ "label": "tc #14: 3014 img/s: checked config, fixed source: the RGB input pad now only when the input is copied to channels last anyway (restores test_require_stride_expanded, which the 2966/3046/3048 states break)",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_14",
+ "config": "/home/dev/local/hill2/acc/trees/tc_14/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7584290165568407,
+  "precision": 0.5574199803663428,
+  "recall": 0.7903271631560891
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7530504965229602,
+  "precision": 0.5538967023959525,
+  "recall": 0.7898512006823969
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7528124672556881,
+  "precision": 0.5540745958590343,
+  "recall": 0.7887382786124385
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 719,
+   "found": 711,
+   "missing": 8,
+   "extra": 10,
+   "largest_score_difference": 0.01953125,
+   "largest_box_shift_px": 10.662933349609375
+  },
+  "detections_iou_0.5": {
+   "detections": 719,
+   "found": 716,
+   "missing": 3,
+   "extra": 5,
+   "largest_score_difference": 0.01953125,
+   "largest_box_shift_px": 15.609405517578125
+  },
+  "raw_output": {
+   "rmse": 0.05138314251012527,
+   "largest": 12.0,
+   "rms_of_reference": 41.326306013478806
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 593,
+   "missing": 134,
+   "extra": 128,
+   "largest_score_difference": 0.026905536651611328,
+   "largest_box_shift_px": 10.553131103515625
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 717,
+   "missing": 10,
+   "extra": 4,
+   "largest_score_difference": 0.026905536651611328,
+   "largest_box_shift_px": 10.553131103515625
+  },
+  "raw_output": {
+   "rmse": 0.09629488014255688,
+   "largest": 28.450958251953125,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 727,
+   "found": 588,
+   "missing": 139,
+   "extra": 131,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 5.282386779785156
+  },
+  "detections_iou_0.5": {
+   "detections": 727,
+   "found": 713,
+   "missing": 14,
+   "extra": 6,
+   "largest_score_difference": 0.03156968951225281,
+   "largest_box_shift_px": 17.0206298828125
+  },
+  "raw_output": {
+   "rmse": 0.10137936710777458,
+   "largest": 24.255874633789062,
+   "rms_of_reference": 41.327141676005915
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32637219118456
+ },
+ "ms_per_batch_with_copy_out": 24.115055450238287
+}

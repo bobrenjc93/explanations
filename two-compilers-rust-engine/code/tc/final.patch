@@ -1,0 +1,297 @@
+diff --git a/torch/_dynamo/guards.py b/torch/_dynamo/guards.py
+index b11746e..8891b06 100644
+--- a/torch/_dynamo/guards.py
++++ b/torch/_dynamo/guards.py
+@@ -613,6 +613,15 @@ class GuardManagerWrapper:
+                 for accessor, mgr in zip(accessors, child_mgrs)
+             )
+ 
++        def is_assumed_constant_attr(
++            accessor: GuardAccessor, names: tuple[str, ...]
++        ) -> bool:
++            return (
++                config.assume_dunder_attributes_remain_unchanged
++                and isinstance(accessor, GetAttrGuardAccessor)
++                and accessor.get_attr_name() in names
++            )
++
+         def ordered_dict_tag_safe(node: GuardManager) -> bool:
+             # Subclass type changes do not update dictionary version tags.
+             return (
+@@ -720,8 +729,19 @@ class GuardManagerWrapper:
+                 if is_subtree_tag_safe:
+                     node.mark_tag_safe()
+             elif issubclass(node.get_type_of_guarded_value(), torch.nn.Module):
+-                is_subtree_tag_safe = check_tag_safety(
+-                    node, (GetGenericDictGuardAccessor, TypeGuardAccessor)
++                # `module.__class__` is the class identity that the recursive
++                # dict tag check already relies on (same as TypeGuardAccessor).
++                is_subtree_tag_safe = all(
++                    (
++                        isinstance(
++                            accessor, (GetGenericDictGuardAccessor, TypeGuardAccessor)
++                        )
++                        or is_assumed_constant_attr(accessor, ("__class__",))
++                    )
++                    and mgr.is_tag_safe()
++                    for accessor, mgr in zip(
++                        node.get_accessors(), node.get_child_managers()
++                    )
+                 )
+                 if is_subtree_tag_safe:
+                     node.mark_tag_safe()
+@@ -793,8 +813,18 @@ class GuardManagerWrapper:
+                 if is_subtree_tag_safe:
+                     node.mark_tag_safe()
+             elif issubclass(node.get_type_of_guarded_value(), type):
+-                is_subtree_tag_safe = check_tag_safety(
+-                    node, (TypeDictGuardAccessor, TypeMROGuardAccessor)
++                # A class is assumed not to be renamed (`cls.__name__ = ...`).
++                is_subtree_tag_safe = all(
++                    (
++                        isinstance(
++                            accessor, (TypeDictGuardAccessor, TypeMROGuardAccessor)
++                        )
++                        or is_assumed_constant_attr(accessor, ("__name__",))
++                    )
++                    and mgr.is_tag_safe()
++                    for accessor, mgr in zip(
++                        node.get_accessors(), node.get_child_managers()
++                    )
+                 )
+                 if is_subtree_tag_safe:
+                     node.mark_tag_safe()
+diff --git a/torch/_inductor/cudagraph_trees.py b/torch/_inductor/cudagraph_trees.py
+index 51dc2e0..3ffdf7b 100644
+--- a/torch/_inductor/cudagraph_trees.py
++++ b/torch/_inductor/cudagraph_trees.py
+@@ -1277,8 +1277,12 @@ class CUDAGraphNode:
+             dst_tensors.append(indexed_dst)
+             src_tensors.append(index_expanded_dims(srcs[idx], expanded_dims))  # type: ignore[arg-type]
+             srcs[idx] = None  # type: ignore[call-overload]
+-        # Fails on empty lists
+-        if dst_tensors:
++        if len(dst_tensors) == 1:
++            # One pair: copy_ takes the device-to-device memcpy path, which is
++            # cheaper to launch and to run than a foreach kernel for one tensor.
++            dst_tensors[0].copy_(src_tensors[0])
++        elif dst_tensors:
++            # Fails on empty lists
+             torch._foreach_copy_(dst_tensors, src_tensors)
+ 
+     def check_static_inputs_are_stable(self, new_inputs: list[InputType]) -> None:
+diff --git a/torch/_inductor/kernel/conv.py b/torch/_inductor/kernel/conv.py
+index 1a18597..c43eb31 100644
+--- a/torch/_inductor/kernel/conv.py
++++ b/torch/_inductor/kernel/conv.py
+@@ -579,6 +579,29 @@ def convolution(
+         # output must be reproduced for fused consumers (see #201296).
+         return emulate_lowp_output_cast(result)
+ 
++    out_channels = weight.get_size()[0]
++    if (
++        V.graph.layout_opt
++        and ndim == 2
++        and device_type == "cuda"
++        and groups == 1
++        and not transposed
++        and x.get_dtype() in (torch.bfloat16, torch.float16)
++        and (isinstance(out_channels, int) or out_channels.is_Integer)
++        and int(out_channels) >= 64
++        and int(out_channels) % 8 != 0
++    ):
++        # cuDNN's channels-last half-precision kernels need the number of
++        # filters to be a multiple of 8 and fall back to much slower paths
++        # otherwise (a 255-channel detection head on an H100: 55 us instead
++        # of 9 us). Zero filters round it up; their outputs are sliced away.
++        extra = 8 - int(out_channels) % 8
++        padded_weight = L[aten.constant_pad_nd](
++            weight, [0, 0] * (ndim + 1) + [0, extra], 0
++        )
++        result = convolution(x, padded_weight, None, **kwargs)
++        return L[aten.slice](result, 1, 0, int(out_channels))
++
+     x.realize()
+     weight.realize()
+ 
+@@ -587,7 +610,27 @@ def convolution(
+     # apply channels last.
+     if V.graph.layout_opt and ndim == 2:
+         V.graph.num_channels_last_conv += 1
+-        x = ir.ExternKernel.require_channels_last(x)  # type: ignore[assignment]
++        x_channels_last = ir.ExternKernel.require_channels_last(x)
++        if (
++            _is_layout_copy(x, x_channels_last)
++            and device_type == "cuda"
++            and groups == 1
++            and not transposed
++            and x.get_dtype() in (torch.bfloat16, torch.float16)
++            and V.graph.sizevars.statically_known_equals(weight.get_size()[1], 3)
++            and V.graph.sizevars.statically_known_equals(x.get_size()[1], 3)
++        ):
++            # cuDNN's channels-last half-precision kernels are slower for 3
++            # input channels (an RGB first layer) than for 4. A zero channel on
++            # the input and on the weight adds only zeros to each sum. Only
++            # done when the input has to be copied to channels last anyway: the
++            # copy below then writes the padded input instead (the unpadded
++            # copy made above is dead and is eliminated).
++            x = L[aten.constant_pad_nd](x, [0, 0, 0, 0, 0, 1], 0)  # type: ignore[assignment]
++            weight = L[aten.constant_pad_nd](weight, [0, 0, 0, 0, 0, 1], 0)  # type: ignore[assignment]
++            x = ir.ExternKernel.require_channels_last(x)  # type: ignore[assignment]
++        else:
++            x = x_channels_last  # type: ignore[assignment]
+         # TODO maybe we can convert weights to channels last just once before
+         # running the model.
+         weight = ir.ExternKernel.require_channels_last(weight)  # type: ignore[assignment]
+@@ -795,6 +838,22 @@ def convolution(
+ 
+ 
+ @register_lowering(aten._convolution)
++def _is_layout_copy(before: ir.IRNode, after: ir.IRNode) -> bool:
++    """Whether require_channels_last(before) had to copy into a new buffer."""
++    if (
++        after is before
++        or not isinstance(after, ir.TensorBox)
++        or not isinstance(after.data, ir.StorageBox)
++        or not isinstance(after.data.data, ir.ComputedBuffer)
++    ):
++        return False
++    return not (
++        isinstance(before, ir.TensorBox)
++        and isinstance(before.data, ir.StorageBox)
++        and before.data.data is after.data.data
++    )
++
++
+ def _convolution(
+     x,
+     weight,
+diff --git a/torch/_inductor/lowering.py b/torch/_inductor/lowering.py
+index ab2e781..7543685 100644
+--- a/torch/_inductor/lowering.py
++++ b/torch/_inductor/lowering.py
+@@ -6139,6 +6139,67 @@ def _pool_argmax_inner_fn(x, kernel_size, inner_fn):
+     return inner_fn_with_index
+ 
+ 
++def _max_pool_indices_unused() -> bool:
++    """Whether nothing reads output 1 (indices or offsets) of the max pool node being lowered."""
++    node = V.graph.current_node
++    if node is None or len(node.users) == 0:
++        return False
++    return all(
++        user.op == "call_function"
++        and user.target is operator.getitem
++        and user.args[1] == 0
++        for user in node.users
++    )
++
++
++def _should_separate_max_pool(kernel_size, stride) -> bool:
++    """
++    A max over a window is the max over one dimension of the maxima over the
++    others, so the pool can run as one 1-d pass per dimension: sum(k) loads
++    per output instead of prod(k). The earlier passes run at the resolution
++    the later dimensions still have before their stride, and each pass adds
++    a kernel, so this is only taken when it at least halves the loads.
++    """
++    if not all(isinstance(v, int) for v in (*kernel_size, *stride)):
++        return False
++    pooled = [d for d in range(len(kernel_size)) if kernel_size[d] > 1]
++    if len(pooled) < 2:
++        return False
++    direct = functools.reduce(operator.mul, kernel_size)
++    separate = 0
++    # passes run from the last dimension to the first
++    for i, d in enumerate(pooled):
++        separate += kernel_size[d] * functools.reduce(
++            operator.mul, [stride[e] for e in pooled[:i]], 1
++        )
++    return 2 * separate <= direct
++
++
++def _separable_max_pool(x, kernel_size, stride, padding, dilation, ceil_mode, *, n_dim):
++    out = x
++    # Each pass is a short 1-d reduction: unroll it into a pointwise kernel, as
++    # the low-memory path does for its windows of up to 25 elements.
++    with config.patch(
++        unroll_reductions_threshold=max(config.unroll_reductions_threshold, 25)
++    ):
++        for d in reversed(range(n_dim)):
++            if kernel_size[d] == 1 and stride[d] == 1 and padding[d] == 0:
++                continue
++            one = [1] * n_dim
++            zero = [0] * n_dim
++            out, _ = _max_pool_with_offsets(
++                out,
++                [*one[:d], kernel_size[d], *one[d + 1 :]],
++                [*one[:d], stride[d], *one[d + 1 :]],
++                [*zero[:d], padding[d], *zero[d + 1 :]],
++                [*one[:d], dilation[d], *one[d + 1 :]],
++                ceil_mode,
++                n_dim=n_dim,
++                with_offsets=False,
++            )
++    return out
++
++
+ def _max_pool_with_offsets(
+     x,
+     kernel_size,
+@@ -6148,6 +6209,7 @@ def _max_pool_with_offsets(
+     ceil_mode,
+     *,
+     n_dim,
++    with_offsets=True,
+ ):
+     x.realize_hint()
+     batch = x.shape[:-n_dim]
+@@ -6194,6 +6256,11 @@ def _max_pool_with_offsets(
+         ranges=new_size,
+         reduction_ranges=kernel_size,
+     )
++    if isinstance(result.data.data, Reduction):  # type: ignore[attr-defined, union-attr]
++        # Only realize if reduction isn't unrolled
++        result.realize()
++    if not with_offsets:
++        return result, None
+     offsets = Reduction.create(
+         reduction_type="argmax",
+         input_node=x,
+@@ -6204,9 +6271,6 @@ def _max_pool_with_offsets(
+         ranges=new_size,
+         reduction_ranges=kernel_size,
+     )
+-    if isinstance(result.data.data, Reduction):  # type: ignore[attr-defined, union-attr]
+-        # Only realize if reduction isn't unrolled
+-        result.realize()
+     if isinstance(offsets.data.data, Reduction):  # type: ignore[attr-defined, union-attr]
+         # Only realize if reduction isn't unrolled
+         offsets.realize()
+@@ -6237,6 +6301,13 @@ def _low_memory_max_pool_with_offsets(
+     )
+ 
+     with config.patch(unroll_reductions_threshold=25):
++        if _max_pool_indices_unused() and _should_separate_max_pool(
++            kernel_size, stride
++        ):
++            result = _separable_max_pool(
++                x, kernel_size, stride, padding, dilation, ceil_mode, n_dim=n_dim
++            )
++            return result, None
+         result, offsets = _max_pool_with_offsets(
+             x,
+             kernel_size,
+@@ -6314,6 +6385,12 @@ def _max_pool_with_indices(
+         x, kernel_size, stride, padding, dilation, n_dim=n_dim
+     )
+ 
++    if _max_pool_indices_unused() and _should_separate_max_pool(kernel_size, stride):
++        out = _separable_max_pool(
++            x, kernel_size, stride, padding, dilation, ceil_mode, n_dim=n_dim
++        )
++        return out, None
++
+     out, offsets = _max_pool_with_offsets(
+         x, kernel_size, stride, padding, dilation, ceil_mode, n_dim=n_dim
+     )

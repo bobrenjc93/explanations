@@ -1,0 +1,6 @@
+ckpt_tests_tc_NN.log: for tc_00 and tc_03 to tc_11 the Inductor GPU tests of convolutions, max pools, cat and the
+stride test (471 tests: -k require_stride_expanded -k conv -k max_pool -k cat). For tc_01, tc_02 and tc_12 to
+tc_16 only test_require_stride_expanded (1 test), the one test that tells the states apart; the full set ran on the
+final source (tests_tc_inductor_gpu.log). ckpt_tests_vm_NN.log: test/test_vm.py on the CPU from the checkpoint's
+own tree; its two errors (test_a_pass_written_in_rust_*) are the same in every tree, the starting one included: the
+tests build a Rust crate against a path that a copied tree does not have.

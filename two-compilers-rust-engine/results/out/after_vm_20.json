@@ -1,0 +1,7 @@
+{
+ "label": "vm_20",
+ "at first": 3104.9339847874207,
+ "after a batch of 3 images": 3141.110781875014,
+ "after images of another size": 3141.274227623079,
+ "after a weight was updated in place": 3150.3125661974095
+}

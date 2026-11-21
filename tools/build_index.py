@@ -34,6 +34,7 @@ TAGS = {
     "frame-stack-chunks": ["PyTorch", "CPython", "benchmarks", "debugging"],
     "two-compilers-one-model": ["PyTorch", "compilers", "torch.compile", "experiment", "AI agents"],
     "two-compilers-six-hours": ["PyTorch", "compilers", "torch.compile", "experiment", "AI agents"],
+    "two-compilers-rust-engine": ["PyTorch", "compilers", "torch.compile", "experiment", "AI agents"],
 }
 
 

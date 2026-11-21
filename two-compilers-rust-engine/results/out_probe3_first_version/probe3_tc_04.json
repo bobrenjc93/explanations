@@ -1,0 +1,20 @@
+{
+ "label": "tc #4: 3327 img/s: UNCHECKED variant: freezing + install_free_tensors + keep_tensor_guards_unsafe, no output copies: in-place weight updates, module attribute edits, train(), replaced params are NOT followed; outputs are overwritten by the next call",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_04",
+ "config": "/home/dev/local/hill2/acc/trees/tc_04/hill_config.py",
+ "probes": {
+  "a 3x3 convolution's weight halved through .data": {
+   "module": "3x3 convolution 19 of 38",
+   "eager_moved_by": 0.5579273588094872,
+   "off_by": 0.5590444333505382,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "a result kept as a tensor across two more calls": {
+   "followed": true
+  },
+  "a result kept through DLPack across two more calls": {
+   "followed": false
+  }
+ }
+}

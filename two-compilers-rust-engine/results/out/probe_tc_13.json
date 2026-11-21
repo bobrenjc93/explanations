@@ -1,0 +1,57 @@
+{
+ "label": "tc_13",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_13",
+ "config": "/home/dev/local/hill2/acc/trees/tc_13/hill_config.py",
+ "rmse_against_eager_before": 0.07233739622619699,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 0.12317089171736433,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5950246498390344,
+   "off_by": 0.5965427470785192,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5915301554982599,
+   "off_by": 0.5953065406516773,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8799074299206139,
+   "off_by": 0.881773084370683,
+   "followed": false,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.08919865497311055,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.06857455576839182,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.08180922093787349,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.93501587618105,
+   "off_by": 6.93721770119911,
+   "followed": false
+  },
+  "model.train()": {
+   "followed": false,
+   "right_after_undo": false
+  }
+ }
+}

@@ -1,0 +1,12 @@
+#!/bin/bash
+# gpu COMMAND...: the coordinator's GPU jobs, behind the same lock as the two sides.
+H=/home/dev/local/hill2
+export PATH=/home/dev/local/g/pytorch-env/bin:$HOME/.cargo/bin:$PATH
+export TORCHINDUCTOR_CACHE_DIR=${HILL_CACHE:-$H/acc/cache}
+unset PYTHONPATH
+exec 9>$H/gpu.lock
+T0=$(date +%s); flock 9; T1=$(date +%s)
+timeout ${HILL_TIMEOUT:-1500} taskset -c 0-11 python3 -I /home/dev/local/cfgloop/guard/safe_run.py 64 "$@"
+RC=$?
+echo "$(date -u +%FT%TZ) coordinator waited $((T1 - T0)) held $(( $(date +%s) - T1 )) rc $RC: $*" | cut -c1-300 >> $H/acc/gpu.log
+exit $RC

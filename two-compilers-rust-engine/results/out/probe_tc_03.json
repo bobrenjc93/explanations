@@ -1,0 +1,57 @@
+{
+ "label": "tc #3: 2964 img/s: + separable max pool (Inductor), module.__class__ tag-safe for dict-tag guards (Dynamo), hook guards on, dynamic=False so speed survives other shapes",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_03",
+ "config": "/home/dev/local/hill2/acc/trees/tc_03/hill_config.py",
+ "rmse_against_eager_before": 0.05212206500019494,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.0915993641483649,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5940015153988939,
+   "off_by": 0.05217184287272865,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5923968550007377,
+   "off_by": 0.05016275089233352,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8794924338209396,
+   "off_by": 0.05071548216998705,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.057858053156477005,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.04612233676087636,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.05354661938463308,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935332726973532,
+   "off_by": 0.0915993641483649,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

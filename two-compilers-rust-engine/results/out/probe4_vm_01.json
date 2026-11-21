@@ -1,0 +1,24 @@
+{
+ "label": "vm_01",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_01",
+ "config": "/home/dev/local/hill2/acc/trees/vm_01/hill_config.py",
+ "probes": {
+  "a 3x3 convolution's weight halved through .data": {
+   "module": "3x3 convolution 19 of 38",
+   "eager_moved_by": 0.5556727826345799,
+   "off_by": 0.05023504986808517,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "every tensor of a result kept across two calls with other inputs": {
+   "tensors": 4,
+   "unchanged": 4,
+   "followed": true
+  },
+  "every tensor of a result kept through DLPack across two calls with other inputs": {
+   "tensors": 4,
+   "unchanged": 4,
+   "followed": true
+  }
+ }
+}

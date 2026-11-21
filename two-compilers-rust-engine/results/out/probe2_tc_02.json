@@ -1,0 +1,15 @@
+{
+ "label": "tc #2: 2757 img/s: CUDA graphs + unfused cat of the YOLO head (max_complex_pointwise_cat_inputs=0) + recursive dict tags for guards",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_02",
+ "config": "/home/dev/local/hill2/acc/trees/tc_02/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.0521361025987257,
+   "eager_moved_by": 0.9377136243966936,
+   "off_by": 0.05210098302544171,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

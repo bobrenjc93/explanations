@@ -1,0 +1,96 @@
+{
+ "label": "tc #8: 2966 img/s: checked config + first conv's RGB input padded to 4 channels in Inductor's conv lowering (cuDNN NHWC bf16: 0.101 -> 0.079 ms)",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_08",
+ "config": "/home/dev/local/hill2/acc/trees/tc_08/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7586135028866181,
+  "precision": 0.5572667102678094,
+  "recall": 0.7904441118277347
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7529478692947033,
+  "precision": 0.5545464048088515,
+  "recall": 0.7897959435660108
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7528124672556881,
+  "precision": 0.5540745958590343,
+  "recall": 0.7887382786124385
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 716,
+   "found": 708,
+   "missing": 8,
+   "extra": 13,
+   "largest_score_difference": 0.01953125,
+   "largest_box_shift_px": 10.692398071289062
+  },
+  "detections_iou_0.5": {
+   "detections": 716,
+   "found": 714,
+   "missing": 2,
+   "extra": 7,
+   "largest_score_difference": 0.01953125,
+   "largest_box_shift_px": 15.700469970703125
+  },
+  "raw_output": {
+   "rmse": 0.05132444444617918,
+   "largest": 12.0,
+   "rms_of_reference": 41.326313509370024
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 594,
+   "missing": 134,
+   "extra": 127,
+   "largest_score_difference": 0.02668893337249756,
+   "largest_box_shift_px": 10.548019409179688
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 717,
+   "missing": 11,
+   "extra": 4,
+   "largest_score_difference": 0.02668893337249756,
+   "largest_box_shift_px": 10.548019409179688
+  },
+  "raw_output": {
+   "rmse": 0.0962903979092906,
+   "largest": 28.903839111328125,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 587,
+   "missing": 141,
+   "extra": 129,
+   "largest_score_difference": 0.03139317035675049,
+   "largest_box_shift_px": 5.310150146484375
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 711,
+   "missing": 17,
+   "extra": 5,
+   "largest_score_difference": 0.03139317035675049,
+   "largest_box_shift_px": 17.113433837890625
+  },
+  "raw_output": {
+   "rmse": 0.10131733435912987,
+   "largest": 23.755752563476562,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32637195445108
+ },
+ "ms_per_batch_with_copy_out": 24.769852636381984
+}

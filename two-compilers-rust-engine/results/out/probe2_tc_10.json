@@ -1,0 +1,15 @@
+{
+ "label": "tc #10: 3048 img/s: checked config + cudagraph input copied with copy_ (memcpy) instead of a foreach kernel when there is one input",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_10",
+ "config": "/home/dev/local/hill2/acc/trees/tc_10/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.05199753657477953,
+   "eager_moved_by": 0.9368155706998681,
+   "off_by": 0.05299385299575833,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

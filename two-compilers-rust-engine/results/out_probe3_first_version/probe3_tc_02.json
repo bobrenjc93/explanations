@@ -1,0 +1,20 @@
+{
+ "label": "tc #2: 2757 img/s: CUDA graphs + unfused cat of the YOLO head (max_complex_pointwise_cat_inputs=0) + recursive dict tags for guards",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_02",
+ "config": "/home/dev/local/hill2/acc/trees/tc_02/hill_config.py",
+ "probes": {
+  "a 3x3 convolution's weight halved through .data": {
+   "module": "3x3 convolution 19 of 38",
+   "eager_moved_by": 0.5579304882422652,
+   "off_by": 0.04993755367089863,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a result kept as a tensor across two more calls": {
+   "followed": true
+  },
+  "a result kept through DLPack across two more calls": {
+   "followed": true
+  }
+ }
+}

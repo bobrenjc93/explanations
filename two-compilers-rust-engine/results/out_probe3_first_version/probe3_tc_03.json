@@ -1,0 +1,20 @@
+{
+ "label": "tc #3: 2964 img/s: + separable max pool (Inductor), module.__class__ tag-safe for dict-tag guards (Dynamo), hook guards on, dynamic=False so speed survives other shapes",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_03",
+ "config": "/home/dev/local/hill2/acc/trees/tc_03/hill_config.py",
+ "probes": {
+  "a 3x3 convolution's weight halved through .data": {
+   "module": "3x3 convolution 19 of 38",
+   "eager_moved_by": 0.5579304882422652,
+   "off_by": 0.04994242261758674,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a result kept as a tensor across two more calls": {
+   "followed": true
+  },
+  "a result kept through DLPack across two more calls": {
+   "followed": true
+  }
+ }
+}

@@ -1,0 +1,15 @@
+{
+ "label": "vm #11: 3355 img/s: fast configuration again (same snapshot as 26afb7f6): weight_layout=\"keep\", hand_out=True; GIVES UP weight.data writes to 3x3 conv weights and raw addresses of results kept across calls",
+ "tree": "/home/dev/local/hill2/acc/trees/vm_11",
+ "config": "/home/dev/local/hill2/acc/trees/vm_11/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.05235447088354507,
+   "eager_moved_by": 0.9368155706998681,
+   "off_by": 0.0,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

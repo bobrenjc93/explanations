@@ -1,0 +1,57 @@
+{
+ "label": "tc #14: 3014 img/s: checked config, fixed source: the RGB input pad now only when the input is copied to channels last anyway (restores test_require_stride_expanded, which the 2966/3046/3048 states break)",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_14",
+ "config": "/home/dev/local/hill2/acc/trees/tc_14/hill_config.py",
+ "rmse_against_eager_before": 0.052073258827029276,
+ "probes": {
+  "bias of the last convolution += 1": {
+   "tensor": "module_list.112.Conv2d.bias",
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.0906975494255528,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "bias of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.bias",
+   "eager_moved_by": 0.5958387264579161,
+   "off_by": 0.05156581633078542,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "weight of a convolution in the middle *= 0.5": {
+   "tensor": "module_list.54.Conv2d.weight",
+   "eager_moved_by": 0.5919920970577557,
+   "off_by": 0.04972883934638746,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "running mean of a batch norm in the middle += 0.5": {
+   "tensor": "module_list.51.BatchNorm2d.running_mean",
+   "eager_moved_by": 0.8798518278453805,
+   "off_by": 0.05088276202854869,
+   "followed": true,
+   "right_after_undo": true
+  },
+  "a batch of 3 images": {
+   "off_by": 0.057711516596530885,
+   "right": true
+  },
+  "images of another size (320x416)": {
+   "off_by": 0.046113528060467895,
+   "right": true
+  },
+  "the timed shape again": {
+   "off_by": 0.053751588733312074,
+   "right": true
+  },
+  "last bias replaced by a new Parameter": {
+   "eager_moved_by": 6.935506360103723,
+   "off_by": 0.0906975494255528,
+   "followed": true
+  },
+  "model.train()": {
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

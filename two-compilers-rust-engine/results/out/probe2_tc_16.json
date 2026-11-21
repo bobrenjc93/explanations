@@ -1,0 +1,15 @@
+{
+ "label": "tc #16: 3015 img/s: same state as the 3014 row (fixed source, checked config), measured again: no change, a second sample of the run noise",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_16",
+ "config": "/home/dev/local/hill2/acc/trees/tc_16/hill_config.py",
+ "probes": {
+  "negative slope of a LeakyReLU in the middle changed to 0.3": {
+   "module": "LeakyReLU 36 of 73",
+   "rmse_against_eager_before": 0.051976255980942396,
+   "eager_moved_by": 0.937263332390854,
+   "off_by": 0.052462836557506644,
+   "followed": true,
+   "right_after_undo": true
+  }
+ }
+}

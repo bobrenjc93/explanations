@@ -1,0 +1,96 @@
+{
+ "label": "tc #3: 2964 img/s: + separable max pool (Inductor), module.__class__ tag-safe for dict-tag guards (Dynamo), hook guards on, dynamic=False so speed survives other shapes",
+ "tree": "/home/dev/local/hill2/acc/trees/tc_03",
+ "config": "/home/dev/local/hill2/acc/trees/tc_03/hill_config.py",
+ "images": 128,
+ "eager_float32": {
+  "mAP@0.5": 0.7586135028866181,
+  "precision": 0.5572667102678094,
+  "recall": 0.7904441118277347
+ },
+ "eager_bfloat16": {
+  "mAP@0.5": 0.7534942888055738,
+  "precision": 0.5549534502329211,
+  "recall": 0.7902560385696266
+ },
+ "compiled_bfloat16": {
+  "mAP@0.5": 0.7526765383059727,
+  "precision": 0.5542573212126614,
+  "recall": 0.7892514689429746
+ },
+ "compiled_against_eager_bfloat16": {
+  "detections": {
+   "detections": 721,
+   "found": 709,
+   "missing": 12,
+   "extra": 6,
+   "largest_score_difference": 0.0234375,
+   "largest_box_shift_px": 23.736553192138672
+  },
+  "detections_iou_0.5": {
+   "detections": 721,
+   "found": 713,
+   "missing": 8,
+   "extra": 2,
+   "largest_score_difference": 0.0234375,
+   "largest_box_shift_px": 23.736553192138672
+  },
+  "raw_output": {
+   "rmse": 0.051164820263480675,
+   "largest": 12.0,
+   "rms_of_reference": 41.326312729819534
+  }
+ },
+ "compiled_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 592,
+   "missing": 136,
+   "extra": 123,
+   "largest_score_difference": 0.03614121675491333,
+   "largest_box_shift_px": 25.89126205444336
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 710,
+   "missing": 18,
+   "extra": 5,
+   "largest_score_difference": 0.03614121675491333,
+   "largest_box_shift_px": 25.89126205444336
+  },
+  "raw_output": {
+   "rmse": 0.09655972731711154,
+   "largest": 32.903839111328125,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "eager_bfloat16_against_float32": {
+  "detections": {
+   "detections": 728,
+   "found": 591,
+   "missing": 137,
+   "extra": 130,
+   "largest_score_difference": 0.03978806734085083,
+   "largest_box_shift_px": 5.324230194091797
+  },
+  "detections_iou_0.5": {
+   "detections": 728,
+   "found": 714,
+   "missing": 14,
+   "extra": 7,
+   "largest_score_difference": 0.03978806734085083,
+   "largest_box_shift_px": 17.06585693359375
+  },
+  "raw_output": {
+   "rmse": 0.10136698626941315,
+   "largest": 23.755752563476562,
+   "rms_of_reference": 41.32714128683452
+  }
+ },
+ "compiled_twice": {
+  "rmse": 0.0,
+  "largest": 0.0,
+  "rms_of_reference": 41.32631591994862
+ },
+ "ms_per_batch_with_copy_out": 23.114331532269716
+}

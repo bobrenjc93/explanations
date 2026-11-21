@@ -1,0 +1,1783 @@
+{
+ "tc": [
+  {
+   "row": 0,
+   "images_per_s": 1953.931499623808,
+   "sha": "c4dbb5dc143efba994fe96575dc09ff41a48f966",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 0,
+     "tests_run": 471
+    },
+    {
+     "row": 1,
+     "tests_run": 1
+    },
+    {
+     "row": 2,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 1,
+   "images_per_s": 2590.784644271121,
+   "sha": "49420120c694c943d470ccdf2ee6d7bc80aa043b",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 1,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 0,
+     "tests_run": 471
+    },
+    {
+     "row": 1,
+     "tests_run": 1
+    },
+    {
+     "row": 2,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 2,
+   "images_per_s": 2756.6473835039606,
+   "sha": "b0082f121380a00058f41b734e852f84defb3a98",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 1,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 0,
+     "tests_run": 471
+    },
+    {
+     "row": 1,
+     "tests_run": 1
+    },
+    {
+     "row": 2,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 3,
+   "images_per_s": 2964.3967125238923,
+   "sha": "d29ba9ee7650d8591749f58ec3f10065e90d2fef",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 3,
+     "tests_run": 471
+    },
+    {
+     "row": 4,
+     "tests_run": 471
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 4,
+   "images_per_s": 3326.9911936835474,
+   "sha": "06097543d68b2b74732ba1f7fdeda29744cb031a",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 3,
+     "tests_run": 471
+    },
+    {
+     "row": 4,
+     "tests_run": 471
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "batch-norm bias",
+    "convolution weight",
+    "running mean",
+    "replaced parameter",
+    "model.train()",
+    "LeakyReLU slope",
+    "write through .data",
+    "results kept as tensors",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 5,
+   "images_per_s": 2992.1042702844866,
+   "sha": "c7a38f0640b53028b7e38471a6bd249288edfbf2",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 5,
+     "tests_run": 471
+    },
+    {
+     "row": 7,
+     "tests_run": 471
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 6,
+   "images_per_s": 3415.9934112262777,
+   "sha": "e2ab49e5475a3e0f73c9f7fe5217099e243efb99",
+   "counted_by_the_harness": false,
+   "tests_on_this_row": null,
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 5,
+     "tests_run": 471
+    },
+    {
+     "row": 7,
+     "tests_run": 471
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": false
+  },
+  {
+   "row": 7,
+   "images_per_s": 3404.730490877526,
+   "sha": "696915d131027c6318ea2eb8f061c4281b02f000",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 5,
+     "tests_run": 471
+    },
+    {
+     "row": 7,
+     "tests_run": 471
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "batch-norm bias",
+    "convolution weight",
+    "running mean",
+    "replaced parameter",
+    "model.train()",
+    "LeakyReLU slope",
+    "write through .data",
+    "results kept as tensors",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 8,
+   "images_per_s": 2965.894060285281,
+   "sha": "8536f1d36429985a23063bfedcbbe85082ee075a",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": [
+     "test_require_stride_expanded_cuda"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 471
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "fails_what_the_starting_source_passes": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "struck": true,
+   "not_followed": [],
+   "passes_every_check": false
+  },
+  {
+   "row": 9,
+   "images_per_s": 3046.4616142878276,
+   "sha": "c51527d045419f6e0a0c5eb08205286491c9a399",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": [
+     "test_require_stride_expanded_cuda"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 9,
+     "tests_run": 471
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "fails_what_the_starting_source_passes": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "struck": true,
+   "not_followed": [],
+   "passes_every_check": false
+  },
+  {
+   "row": 10,
+   "images_per_s": 3047.6311178101555,
+   "sha": "2dd5a4a1c1d925708ce80ffc305092c6aa5f9f17",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": [
+     "test_require_stride_expanded_cuda"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 10,
+     "tests_run": 471
+    },
+    {
+     "row": 11,
+     "tests_run": 471
+    },
+    {
+     "row": 12,
+     "tests_run": 1
+    },
+    {
+     "row": 13,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "fails_what_the_starting_source_passes": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "struck": true,
+   "not_followed": [],
+   "passes_every_check": false
+  },
+  {
+   "row": 11,
+   "images_per_s": 3523.7544648390885,
+   "sha": "83f119618700a7f8cd6879db5efefdf266ddc718",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 471,
+    "bad": [
+     "test_require_stride_expanded_cuda"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 10,
+     "tests_run": 471
+    },
+    {
+     "row": 11,
+     "tests_run": 471
+    },
+    {
+     "row": 12,
+     "tests_run": 1
+    },
+    {
+     "row": 13,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "fails_what_the_starting_source_passes": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "struck": true,
+   "not_followed": [
+    "batch-norm bias",
+    "convolution weight",
+    "running mean",
+    "replaced parameter",
+    "model.train()",
+    "LeakyReLU slope",
+    "write through .data",
+    "results kept as tensors",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 12,
+   "images_per_s": 3569.6881730630253,
+   "sha": "ce8b7a66967b2353efa4c9d2a0e928cbbff7fa14",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 1,
+    "bad": [
+     "test_require_stride_expanded_cuda"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 10,
+     "tests_run": 471
+    },
+    {
+     "row": 11,
+     "tests_run": 471
+    },
+    {
+     "row": 12,
+     "tests_run": 1
+    },
+    {
+     "row": 13,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "fails_what_the_starting_source_passes": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "struck": true,
+   "not_followed": [
+    "batch-norm bias",
+    "convolution weight",
+    "running mean",
+    "replaced parameter",
+    "model.train()",
+    "LeakyReLU slope",
+    "write through .data",
+    "results kept as tensors",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 13,
+   "images_per_s": 3611.951000791046,
+   "sha": "94cc6cd8e106a509dbbcf5ba84eb748778291a27",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 1,
+    "bad": [
+     "test_require_stride_expanded_cuda"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 10,
+     "tests_run": 471
+    },
+    {
+     "row": 11,
+     "tests_run": 471
+    },
+    {
+     "row": 12,
+     "tests_run": 1
+    },
+    {
+     "row": 13,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "fails_what_the_starting_source_passes": [
+    "test_require_stride_expanded_cuda"
+   ],
+   "struck": true,
+   "not_followed": [
+    "batch-norm bias",
+    "convolution weight",
+    "running mean",
+    "replaced parameter",
+    "model.train()",
+    "LeakyReLU slope",
+    "write through .data",
+    "results kept as tensors",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 14,
+   "images_per_s": 3014.334438643329,
+   "sha": "a0b71e90bfea4adfdb4a0649ea3401794bb058b9",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 1,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 14,
+     "tests_run": 1
+    },
+    {
+     "row": 15,
+     "tests_run": 1
+    },
+    {
+     "row": 16,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 15,
+   "images_per_s": 3550.9214170745613,
+   "sha": "886b1a6d48df1bd945467acc68483de265ade34e",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 1,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 14,
+     "tests_run": 1
+    },
+    {
+     "row": 15,
+     "tests_run": 1
+    },
+    {
+     "row": 16,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "batch-norm bias",
+    "convolution weight",
+    "running mean",
+    "replaced parameter",
+    "model.train()",
+    "LeakyReLU slope",
+    "write through .data",
+    "results kept as tensors",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 16,
+   "images_per_s": 3014.889560323673,
+   "sha": "4491cdfe94816cd111d1eaf31fb013ad5d5390c5",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 1,
+    "bad": []
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 14,
+     "tests_run": 1
+    },
+    {
+     "row": 15,
+     "tests_run": 1
+    },
+    {
+     "row": 16,
+     "tests_run": 1
+    }
+   ],
+   "not_passing_on_this_source": [],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  }
+ ],
+ "vm": [
+  {
+   "row": 0,
+   "images_per_s": 1824.5803066668964,
+   "sha": "f603cb342d892a80a1c943e17fbe039e7c38fef9",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 417,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 0,
+     "tests_run": 417
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 1,
+   "images_per_s": 2404.599676454311,
+   "sha": "0d18b9aac2a998bee7fbcdcd05b787b64afc2b0c",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 417,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 1,
+     "tests_run": 417
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 2,
+   "images_per_s": 2868.9207345114887,
+   "sha": "a0421d0bcd8dcab38d523600168565d8fc7fc846",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 417,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 2,
+     "tests_run": 417
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 3,
+   "images_per_s": 2970.9079276336724,
+   "sha": "6c039389ccfa751498f736d336ab540654eb489c",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 417,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 3,
+     "tests_run": 417
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 4,
+   "images_per_s": 3218.4372312043515,
+   "sha": "719739b135a74c66480898d45ac3378e772748a8",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 417,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 4,
+     "tests_run": 417
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 5,
+   "images_per_s": 3337.5476605629283,
+   "sha": "01b32b9101b0e0653705c60076856821162de65e",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 417,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 5,
+     "tests_run": 417
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "write through .data"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 6,
+   "images_per_s": 3147.2532345252926,
+   "sha": "05a6477abdb80d47af4d4d84b1df2710f6de96be",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 425,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 6,
+     "tests_run": 425
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 7,
+   "images_per_s": 3383.8931894620728,
+   "sha": "da8b72ab36379c5165bdee24fb7e4ba574101806",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 425,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 7,
+     "tests_run": 425
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "write through .data",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 8,
+   "images_per_s": 3355.0803008846424,
+   "sha": "26afb7f69c6dec9db4c0bb62200afef400188f8e",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "write through .data",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 9,
+   "images_per_s": 3146.10220450873,
+   "sha": "33eed826a954fee7703bd28c377812c14e2e9d4d",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 10,
+   "images_per_s": 3145.1124532719323,
+   "sha": "7cbdf5ce55b012f8b584f492b6280f379a781eb0",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 11,
+   "images_per_s": 3355.279525270658,
+   "sha": "47bef9e5e19eebf61cba9ba72f4a86b2993ccf38",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "write through .data",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 12,
+   "images_per_s": 3151.957936048837,
+   "sha": "290c92867516d0f42e2d785b231a588c9506a542",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 13,
+   "images_per_s": 3353.3856162924094,
+   "sha": "23936570f341fcfed598a6319699c0b331c611cb",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "write through .data",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 14,
+   "images_per_s": 3158.9109796165894,
+   "sha": "79a1aa6e7bdf8aa01d3d8aa4d3d19b9e7c81376d",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 15,
+   "images_per_s": 3356.4046067000095,
+   "sha": "15ee47b322b34457dfe5b8dec059b5dfc9d45f0f",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "write through .data",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 16,
+   "images_per_s": 3159.3014380458903,
+   "sha": "30e85d9704907a6317eb8cc93010db0542461b00",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 17,
+   "images_per_s": 3377.905698917733,
+   "sha": "1135adb2f751e463bbd3920d78bd68c3ac9271a4",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [
+    "write through .data",
+    "results kept through DLPack"
+   ],
+   "passes_every_check": false
+  },
+  {
+   "row": 18,
+   "images_per_s": 3161.817527187471,
+   "sha": "6bf0035f1e57c164393ce232a3c4d56eedf9c94c",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 19,
+   "images_per_s": 3157.9974755386233,
+   "sha": "66a56218d0888b03493d227bed10abcbd901a853",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  },
+  {
+   "row": 20,
+   "images_per_s": 3158.4130361163143,
+   "sha": "2f3d4fe28832e6483b415d6f64d4de38aecb1df1",
+   "counted_by_the_harness": true,
+   "tests_on_this_row": {
+    "ran": 428,
+    "bad": [
+     "test_a_pass_written_in_rust_can_fail",
+     "test_a_pass_written_in_rust_puts_a_kernel_in"
+    ]
+   },
+   "runs_on_rows_with_the_same_source": [
+    {
+     "row": 8,
+     "tests_run": 428
+    },
+    {
+     "row": 9,
+     "tests_run": 428
+    },
+    {
+     "row": 10,
+     "tests_run": 428
+    },
+    {
+     "row": 11,
+     "tests_run": 428
+    },
+    {
+     "row": 12,
+     "tests_run": 428
+    },
+    {
+     "row": 13,
+     "tests_run": 428
+    },
+    {
+     "row": 14,
+     "tests_run": 428
+    },
+    {
+     "row": 15,
+     "tests_run": 428
+    },
+    {
+     "row": 16,
+     "tests_run": 428
+    },
+    {
+     "row": 17,
+     "tests_run": 428
+    },
+    {
+     "row": 18,
+     "tests_run": 428
+    },
+    {
+     "row": 19,
+     "tests_run": 428
+    },
+    {
+     "row": 20,
+     "tests_run": 428
+    }
+   ],
+   "not_passing_on_this_source": [
+    "test_a_pass_written_in_rust_can_fail",
+    "test_a_pass_written_in_rust_puts_a_kernel_in"
+   ],
+   "fails_what_the_starting_source_passes": [],
+   "struck": false,
+   "not_followed": [],
+   "passes_every_check": true
+  }
+ ]
+}
